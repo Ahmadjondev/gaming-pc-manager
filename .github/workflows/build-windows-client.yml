@@ -1,0 +1,43 @@
+name: Build Windows Gaming Agent
+
+on:
+  push:
+    paths:
+      - 'client-windows/**'
+      - '.github/workflows/build-windows-client.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore Dependencies
+        run: dotnet restore client-windows/GameRoomAgent.csproj
+
+      - name: Publish Single-File Executable
+        run: >
+          dotnet publish client-windows/GameRoomAgent.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:EnableCompressionInSingleFile=true
+          -o publish/
+
+      - name: Copy Config
+        run: copy client-windows\config.json publish\config.json
+
+      - name: Upload Windows Agent Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GameRoomAgent-Windows-x64
+          path: publish/

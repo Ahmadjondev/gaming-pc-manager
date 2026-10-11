@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Game Room Manager</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- TOP NAVIGATION -->
+    <header class="top-nav">
+      <div class="brand">
+        <div class="brand-icon">🎮</div>
+        <div>
+          <h1>GAME ROOM <span class="brand-accent">HUB</span></h1>
+          <p class="subtitle">Laptop & PC Fleet Management</p>
+        </div>
+      </div>
+
+      <div class="nav-right">
+        <div class="server-status">
+          <span class="status-dot pulse-green" id="serverStatusDot"></span>
+          <span id="serverStatusText">Connecting...</span>
+        </div>
+        <div class="clock-badge" id="liveClock">00:00:00</div>
+      </div>
+    </header>
+
+    <!-- STATS OVERVIEW -->
+    <section class="stats-bar">
+      <div class="stat-card">
+        <span class="stat-label">TOTAL STATIONS</span>
+        <span class="stat-value" id="statTotal">0</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">ONLINE</span>
+        <span class="stat-value text-emerald" id="statOnline">0</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">IN SESSION</span>
+        <span class="stat-value text-cyan" id="statInSession">0</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">LOCKED</span>
+        <span class="stat-value text-ruby" id="statLocked">0</span>
+      </div>
+    </section>
+
+    <!-- MAIN STATIONS CONTAINER -->
+    <main class="main-content">
+      <div class="section-header">
+        <h2>Gaming Stations</h2>
+        <span class="count-tag" id="stationCountTag">0 Devices</span>
+      </div>
+
+      <div class="stations-grid" id="stationsGrid">
+        <!-- Station Cards will be injected dynamically -->
+        <div class="empty-state" id="emptyState">
+          <div class="empty-icon">💻</div>
+          <h3>Waiting for Laptop to Connect...</h3>
+          <p>Run the <strong>GameRoomAgent.exe</strong> on your Windows laptop.<br>Ensure it points to this Mac's IP address on your local network.</p>
+          <div class="lan-info-box">
+            <span>Agent WebSocket URL:</span>
+            <code id="wsHintUrl">ws://&lt;mac-ip&gt;:3000/ws/client</code>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ALERT MODAL -->
+  <div class="modal-backdrop" id="alertModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>📢 Send Announcement to Laptop</h3>
+        <button class="modal-close" onclick="closeAlertModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <label for="alertTitleInput">Title</label>
+        <input type="text" id="alertTitleInput" value="Admin Notice" placeholder="e.g. Session Notice">
+        
+        <label for="alertMessageInput">Message</label>
+        <textarea id="alertMessageInput" rows="3" placeholder="Enter message to display on the laptop screen..."></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeAlertModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="submitAlert()">Send Message</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- POWER ACTION CONFIRMATION MODAL -->
+  <div class="modal-backdrop" id="powerModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="powerModalTitle">⚠️ Confirm Power Action</h3>
+        <button class="modal-close" onclick="closePowerModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="powerModalPrompt">Are you sure you want to reboot this station?</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closePowerModal()">Cancel</button>
+        <button class="btn btn-danger" id="confirmPowerBtn">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
