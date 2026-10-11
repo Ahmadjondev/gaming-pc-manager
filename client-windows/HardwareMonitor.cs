@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -193,6 +194,56 @@ namespace GameRoomAgent
                 catch { }
             }
             return "127.0.0.1";
+        }
+
+        public static string? GetTailscaleIpAddress()
+        {
+            try
+            {
+                foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (ni.OperationalStatus == OperationalStatus.Up &&
+                        (ni.Name.IndexOf("tailscale", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         ni.Description.IndexOf("tailscale", StringComparison.OrdinalIgnoreCase) >= 0))
+                    {
+                        foreach (var ip in ni.GetIPProperties().UnicastAddresses)
+                        {
+                            if (ip.Address.AddressFamily == AddressFamily.InterNetwork)
+                            {
+                                string s = ip.Address.ToString();
+                                if (s.StartsWith("100.")) return s;
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        public static bool TrySetupUpnpPortMapping(int port)
+        {
+            try
+            {
+                Type? upnpNatType = Type.GetTypeFromProgID("HNetCfg.NATUPnP");
+                if (upnpNatType != null)
+                {
+                    dynamic? upnpNat = Activator.CreateInstance(upnpNatType);
+                    dynamic? mappings = upnpNat?.StaticPortMappingCollection;
+                    if (mappings != null)
+                    {
+                        string localIp = GetLocalIpAddress();
+                        mappings.Add(port, "TCP", port, localIp, true, "GameRoom Direct Remote Control");
+                        Console.WriteLine($"[UPnP] Successfully mapped router port {port} -> {localIp}:{port}");
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[UPnP] Note: UPnP router port mapping not available or skipped: {ex.Message}");
+            }
+            return false;
         }
     }
 }

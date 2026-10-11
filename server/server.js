@@ -231,12 +231,24 @@ function handleAdminCommand(cmd) {
   }
 }
 
+// Utility to get real client public IP behind proxies (Render, Cloudflare, etc.)
+function extractClientIp(req) {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded) {
+    const first = forwarded.split(',')[0].trim();
+    if (first) return first.replace(/^::ffff:/, '');
+  }
+  const remote = req.socket ? req.socket.remoteAddress : '';
+  return (remote || '').replace(/^::ffff:/, '');
+}
+
 // ----------------- WINDOWS CLIENT HANDLER -----------------
 function handleClientConnection(ws, req) {
   let stationId = null;
+  const clientPublicIp = extractClientIp(req);
   const remoteIp = req.socket.remoteAddress;
 
-  console.log(`[Client] Connection received from ${remoteIp}`);
+  console.log(`[Client] Connection received from ${remoteIp} (Public WAN IP: ${clientPublicIp})`);
 
   ws.on('message', (data) => {
     try {
@@ -261,6 +273,8 @@ function handleClientConnection(ws, req) {
           hostname: msg.hostname || 'Unknown-PC',
           os: msg.os || 'Windows',
           ip: msg.ip || remoteIp,
+          publicIp: msg.publicIp || clientPublicIp,
+          tailscaleIp: msg.tailscaleIp || existing.tailscaleIp || null,
           controlPort: msg.controlPort || existing.controlPort || 48999,
           status: 'online',
           isLocked: existing.isLocked !== undefined ? existing.isLocked : false,
@@ -270,7 +284,7 @@ function handleClientConnection(ws, req) {
         };
 
         stations.set(stationId, stationState);
-        console.log(`[Client Registered] ${stationState.name} (${stationId}) - ${stationState.ip}`);
+        console.log(`[Client Registered] ${stationState.name} (${stationId}) - LAN: ${stationState.ip}, WAN: ${stationState.publicIp}`);
 
         // Broadcast to admins
         broadcastToAdmins({ type: 'station_connected', station: stationState });
@@ -286,6 +300,9 @@ function handleClientConnection(ws, req) {
         const station = stations.get(stationId);
         if (station) {
           station.status = 'online';
+          if (clientPublicIp && !station.publicIp) station.publicIp = clientPublicIp;
+          if (msg.publicIp) station.publicIp = msg.publicIp;
+          if (msg.tailscaleIp) station.tailscaleIp = msg.tailscaleIp;
           station.cpu = msg.cpu ?? station.cpu;
           station.ram = msg.ram ?? station.ram;
           station.ramTotalGb = msg.ramTotalGb ?? station.ramTotalGb;

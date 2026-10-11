@@ -32,6 +32,7 @@ namespace GameRoomAgent
             {
                 directServer = new DirectControlServer(config);
                 directServer.Start();
+                _ = Task.Run(() => HardwareMonitor.TrySetupUpnpPortMapping(config.ControlPort > 0 ? config.ControlPort : 48999));
             }
 
             // Run with system tray context

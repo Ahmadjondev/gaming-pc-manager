@@ -99,10 +99,10 @@ public struct MainView: View {
                                     Image(systemName: "bolt.fill")
                                         .font(.system(size: 16))
                                         .foregroundColor(.yellow)
-                                    Text("⚡ DIRECT LAN REMOTE CONTROL (60 FPS)")
+                                    Text("⚡ DIRECT REMOTE CONTROL (LAN / WAN / TAILSCALE)")
                                         .font(.system(size: 15, weight: .black))
                                         .foregroundColor(.white)
-                                    Text("NO CLOUD LAG")
+                                    Text("60 FPS P2P")
                                         .font(.system(size: 10, weight: .bold))
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2)
@@ -110,7 +110,7 @@ public struct MainView: View {
                                         .foregroundColor(.green)
                                         .cornerRadius(4)
                                 }
-                                Text("Connect directly to any gaming laptop on your local Wi-Fi / Ethernet (< 3ms latency, 60 FPS, real-time mouse & keyboard)")
+                                Text("Connect directly to any gaming laptop via Local LAN, Public WAN IP, or Tailscale (< 3ms latency, 60 FPS, real-time mouse & keyboard)")
                                     .font(.system(size: 12))
                                     .foregroundColor(.gray)
                             }

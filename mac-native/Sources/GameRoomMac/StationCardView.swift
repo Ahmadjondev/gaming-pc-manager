@@ -5,6 +5,7 @@ public struct StationCardView: View {
     @ObservedObject public var service: WebSocketService
 
     @State private var showingDirectControl = false
+    @State private var directControlTargetStation: Station? = nil
     @State private var showingAlertSheet = false
     @State private var showingScreenSheet = false
     @State private var showingFilesSheet = false
@@ -27,8 +28,18 @@ public struct StationCardView: View {
                     HStack(spacing: 6) {
                         Text(station.hostname ?? "Windows PC")
                         Text("•")
-                        Text(station.ip ?? "LAN")
+                        Text("LAN: \(station.ip ?? "Unknown")")
                             .foregroundColor(.cyan)
+                        if let pub = station.publicIp, !pub.isEmpty, pub != station.ip {
+                            Text("•")
+                            Text("WAN: \(pub)")
+                                .foregroundColor(.purple)
+                        }
+                        if let ts = station.tailscaleIp, !ts.isEmpty {
+                            Text("•")
+                            Text("TS: \(ts)")
+                                .foregroundColor(.green)
+                        }
                         Text(":\(station.controlPort ?? 48999)")
                             .foregroundColor(.gray)
                     }
@@ -168,24 +179,75 @@ public struct StationCardView: View {
                     .buttonStyle(ActionButtonStyle(color: .cyan))
                 }
 
-                // ⚡ HIGH-PERFORMANCE DIRECT CONTROL (60 FPS LAN)
-                Button {
-                    showingDirectControl = true
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 12))
-                        Text("⚡ Direct Control (60 FPS LAN)")
-                            .font(.system(size: 12, weight: .bold))
+                // ⚡ HIGH-PERFORMANCE DIRECT CONTROL (LAN / WAN / TAILSCALE)
+                HStack(spacing: 8) {
+                    Button {
+                        directControlTargetStation = station
+                        showingDirectControl = true
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 11))
+                            Text("⚡ Direct LAN (60 FPS)")
+                                .font(.system(size: 11, weight: .bold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 7)
+                        .background(LinearGradient(colors: [Color.indigo, Color.purple], startPoint: .leading, endPoint: .trailing))
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                        .shadow(color: Color.purple.opacity(0.3), radius: 3, y: 1)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 7)
-                    .background(LinearGradient(colors: [Color.indigo, Color.purple], startPoint: .leading, endPoint: .trailing))
-                    .foregroundColor(.white)
-                    .cornerRadius(8)
-                    .shadow(color: Color.purple.opacity(0.3), radius: 4, y: 2)
+                    .buttonStyle(.plain)
+
+                    if let pub = station.publicIp, !pub.isEmpty, pub != station.ip {
+                        Button {
+                            var wanStation = station
+                            wanStation.ip = pub
+                            directControlTargetStation = wanStation
+                            showingDirectControl = true
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "globe")
+                                    .font(.system(size: 11))
+                                Text("🌐 Direct WAN")
+                                    .font(.system(size: 11, weight: .bold))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 7)
+                            .background(Color.purple.opacity(0.25))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.purple.opacity(0.6), lineWidth: 1))
+                            .foregroundColor(.purple)
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Connect directly over Internet using Public WAN IP (\(pub):\(station.controlPort ?? 48999))")
+                    }
+
+                    if let ts = station.tailscaleIp, !ts.isEmpty {
+                        Button {
+                            var tsStation = station
+                            tsStation.ip = ts
+                            directControlTargetStation = tsStation
+                            showingDirectControl = true
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "shield.fill")
+                                    .font(.system(size: 11))
+                                Text("🛡️ Tailscale")
+                                    .font(.system(size: 11, weight: .bold))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 7)
+                            .background(Color.green.opacity(0.2))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.green.opacity(0.6), lineWidth: 1))
+                            .foregroundColor(.green)
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Connect directly over Tailscale P2P VPN (\(ts))")
+                    }
                 }
-                .buttonStyle(.plain)
 
                 HStack(spacing: 8) {
                     Button {
@@ -226,7 +288,7 @@ public struct StationCardView: View {
                 .stroke(borderColor, lineWidth: 1.5)
         )
         .sheet(isPresented: $showingDirectControl) {
-            DirectRemoteControlView(station: station, service: service)
+            DirectRemoteControlView(station: directControlTargetStation ?? station, service: service)
         }
         .sheet(isPresented: $showingScreenSheet) {
             ScreenPreviewSheet(station: station, service: service)

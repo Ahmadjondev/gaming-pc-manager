@@ -99,6 +99,7 @@ namespace GameRoomAgent
                 hostname = Environment.MachineName,
                 os = Environment.OSVersion.ToString(),
                 ip = HardwareMonitor.GetLocalIpAddress(),
+                tailscaleIp = HardwareMonitor.GetTailscaleIpAddress(),
                 controlPort = _config.ControlPort
             };
 
@@ -126,7 +127,8 @@ namespace GameRoomAgent
                         isCharging = isCharging,
                         batteryStatus = batteryStatus,
                         activeWindow = _hardwareMonitor.GetActiveWindowTitle(),
-                        isLocked = LockForm.IsLocked
+                        isLocked = LockForm.IsLocked,
+                        tailscaleIp = HardwareMonitor.GetTailscaleIpAddress()
                     };
 
                     await SendJsonAsync(telemetry, ct);

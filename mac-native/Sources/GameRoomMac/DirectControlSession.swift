@@ -54,8 +54,11 @@ public class DirectControlSession: NSObject, ObservableObject {
             guard let self = self, !self.isConnected, !self.isCancelled else { return }
             DispatchQueue.main.async {
                 self.connectionStatus = "Connection Failed"
-                if !sameSubnet && localMacIp != "Unknown" {
-                    self.errorMessage = "⚠️ Wi-Fi Network Mismatch Detected!\n\n• Your Mac is connected to: \(localMacIp)\n• Your Laptop is connected to: \(self.host)\n\nBecause your Mac and Laptop are on different networks, direct LAN streaming cannot reach the laptop.\n\n👉 Fix: Connect both your Mac and Laptop to the SAME Wi-Fi network (or connect your laptop to your iPhone hotspot)."
+                let isLanTarget = Self.isPrivateLanIp(self.host)
+                if isLanTarget && !sameSubnet && localMacIp != "Unknown" {
+                    self.errorMessage = "⚠️ Wi-Fi Network Mismatch Detected!\n\n• Your Mac is connected to: \(localMacIp)\n• Your Laptop is connected to: \(self.host)\n\nBecause your Mac and Laptop are on different local networks, direct LAN streaming cannot reach the laptop.\n\n👉 Fix: Connect both your Mac and Laptop to the SAME Wi-Fi network (or connect your laptop to your iPhone hotspot)."
+                } else if !isLanTarget {
+                    self.errorMessage = "⚠️ Could not reach Internet / Public IP: \(self.host):\(self.port)\n\nWhen connecting over the Internet (WAN):\n• Ensure Port \(self.port) is forwarded on your home router to the laptop's LAN IP.\n• Or use Tailscale P2P for instant direct connection without router settings.\n• Or switch to 'Cloud Preview' which relays through the cloud server."
                 } else {
                     self.errorMessage = "Could not reach \(self.host):\(self.port) within 3.5 seconds.\nMake sure GameRoomAgent is running on the laptop and port \(self.port) is open on your firewall."
                 }
@@ -242,6 +245,18 @@ public class DirectControlSession: NSObject, ObservableObject {
         let p2 = ip2.split(separator: ".")
         guard p1.count == 4 && p2.count == 4 else { return false }
         return p1[0] == p2[0] && p1[1] == p2[1] && p1[2] == p2[2]
+    }
+
+    public static func isPrivateLanIp(_ ip: String) -> Bool {
+        if ip == "localhost" || ip == "127.0.0.1" { return true }
+        if ip.hasPrefix("192.168.") || ip.hasPrefix("10.") { return true }
+        if ip.hasPrefix("172.") {
+            let parts = ip.split(separator: ".")
+            if parts.count >= 2, let second = Int(parts[1]), second >= 16 && second <= 31 {
+                return true
+            }
+        }
+        return false
     }
 
     public static func getLocalMacIp() -> String? {
