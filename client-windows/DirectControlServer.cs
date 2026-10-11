@@ -472,10 +472,9 @@ namespace GameRoomAgent
                             var root = doc.RootElement;
                             string type = root.GetProperty("type").GetString() ?? "";
 
-                            // Frame ACK from Mac -> unlocks next frame transmission immediately
+                            // Frame ACK from Mac
                             if (type == "ack")
                             {
-                                Interlocked.Exchange(ref inFlight, 0);
                                 continue;
                             }
 

@@ -93,13 +93,13 @@ namespace GameRoomAgent
                     // Fast hardware-assisted GDI capture
                     if (targetWidth == bounds.Width && targetHeight == bounds.Height)
                     {
-                        _reusableGraphics.CopyFromScreen(bounds.Left, bounds.Top, 0, 0, bounds.Size, CopyPixelOperation.SourceCopy);
+                        _reusableGraphics!.CopyFromScreen(bounds.Left, bounds.Top, 0, 0, bounds.Size, CopyPixelOperation.SourceCopy);
                     }
                     else
                     {
                         IntPtr desktopWnd = GetDesktopWindow();
                         IntPtr hdcSrc = GetWindowDC(desktopWnd);
-                        IntPtr hdcDest = _reusableGraphics.GetHdc();
+                        IntPtr hdcDest = _reusableGraphics!.GetHdc();
                         try
                         {
                             SetStretchBltMode(hdcDest, COLORONCOLOR);
@@ -127,7 +127,7 @@ namespace GameRoomAgent
                                 curY = (int)Math.Round((double)curY * targetHeight / bounds.Height);
                             }
 
-                            IntPtr hdc = _reusableGraphics.GetHdc();
+                            IntPtr hdc = _reusableGraphics!.GetHdc();
                             try
                             {
                                 DrawIcon(hdc, curX, curY, ci.hCursor);
