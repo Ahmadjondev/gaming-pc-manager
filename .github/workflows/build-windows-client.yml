@@ -33,8 +33,10 @@ jobs:
           -p:EnableCompressionInSingleFile=true
           -o publish/
 
-      - name: Copy Config
-        run: copy client-windows\config.json publish\config.json
+      - name: Copy Config and Installer
+        run: |
+          copy client-windows\config.json publish\config.json
+          copy client-windows\install.bat publish\install.bat
 
       - name: Upload Windows Agent Artifact
         uses: actions/upload-artifact@v4
