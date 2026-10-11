@@ -17,6 +17,7 @@ Thumbs.db
 downloaded-agent/
 downloaded-agent-latest/
 ready-agent/
+ready-v110/
 
 # Swift / macOS build
 .build/
