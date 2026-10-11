@@ -59,12 +59,18 @@ public struct FileSystemEntry: Identifiable, Codable, Hashable {
     public var SizeFormatted: String?
     public var Extension: String?
     public var IsExecutable: Bool?
+    public var IsHidden: Bool?
+    public var IsSystem: Bool?
     public var LastModified: String?
 }
 
 public struct DirectoryContentResult: Codable {
     public var CurrentPath: String
     public var ParentPath: String?
-    public var Items: [FileSystemEntry]
+    public var Items: [FileSystemEntry]?
     public var Error: String?
+
+    public var safeItems: [FileSystemEntry] {
+        return Items ?? []
+    }
 }

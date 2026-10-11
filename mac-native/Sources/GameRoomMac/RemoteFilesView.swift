@@ -3,7 +3,7 @@ import AppKit
 
 public struct RemoteFileBrowserSheet: View {
     public let station: Station
-    public let service: WebSocketService
+    @ObservedObject public var service: WebSocketService
     @Environment(\.dismiss) private var dismiss
 
     @StateObject private var fileManager: DirectFileManager
@@ -11,6 +11,7 @@ public struct RemoteFileBrowserSheet: View {
     @State private var customFileNameText: String = ""
     @State private var selectedDriveName: String = ""
     @State private var searchText: String = ""
+    @State private var showHiddenFiles: Bool = true // Default true to show hidden files
 
     public init(station: Station, service: WebSocketService) {
         self.station = station
@@ -84,12 +85,16 @@ public struct RemoteFileBrowserSheet: View {
                     .font(.system(size: 11, weight: .bold))
                     .foregroundColor(.gray)
 
-                let currentDrives = fileManager.isDirectMode ? fileManager.drives : service.drives
+                let currentDrives = !fileManager.drives.isEmpty ? fileManager.drives : service.drives
 
                 if currentDrives.isEmpty {
-                    Text("Scanning drives...")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Scanning drives...")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
                 } else {
                     ForEach(currentDrives) { drive in
                         Button {
@@ -109,6 +114,20 @@ public struct RemoteFileBrowserSheet: View {
 
                 Spacer()
 
+                // Hidden Files Visibility Toggle
+                Button {
+                    showHiddenFiles.toggle()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: showHiddenFiles ? "eye.fill" : "eye.slash")
+                        Text(showHiddenFiles ? "Hidden Files: Shown" : "Hidden Files: Hidden")
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                }
+                .buttonStyle(.bordered)
+                .tint(showHiddenFiles ? .purple : .secondary)
+                .help("Toggle visibility of hidden and system files")
+
                 // Search filter in current directory
                 HStack(spacing: 4) {
                     Image(systemName: "magnifyingglass")
@@ -116,6 +135,16 @@ public struct RemoteFileBrowserSheet: View {
                     TextField("Filter...", text: $searchText)
                         .textFieldStyle(.plain)
                         .frame(width: 120)
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                                .font(.system(size: 10))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
@@ -129,11 +158,11 @@ public struct RemoteFileBrowserSheet: View {
             Divider()
 
             // ==================== NAVIGATION / BREADCRUMBS ====================
-            let activeDir = fileManager.isDirectMode ? fileManager.currentDirectory : service.currentDirectory
+            let activeDir = fileManager.currentDirectory ?? service.currentDirectory
 
             HStack(spacing: 8) {
                 Button {
-                    if let parent = activeDir?.ParentPath {
+                    if let parent = activeDir?.ParentPath, !parent.isEmpty {
                         fileManager.browseDirectory(path: parent)
                     }
                 } label: {
@@ -144,25 +173,32 @@ public struct RemoteFileBrowserSheet: View {
                     .font(.system(size: 11))
                 }
                 .buttonStyle(.bordered)
-                .disabled(activeDir?.ParentPath == nil)
+                .disabled(activeDir?.ParentPath == nil || activeDir?.ParentPath?.isEmpty == true)
 
-                Text(activeDir?.CurrentPath ?? "Loading directory...")
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundColor(.cyan)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.black.opacity(0.35))
-                    .cornerRadius(4)
+                HStack {
+                    Image(systemName: "folder")
+                        .font(.system(size: 11))
+                        .foregroundColor(.cyan)
+
+                    Text(activeDir?.CurrentPath ?? "Scanning directory...")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(.cyan)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.black.opacity(0.35))
+                .cornerRadius(4)
 
                 Button {
-                    if let current = activeDir?.CurrentPath {
-                        fileManager.browseDirectory(path: current)
-                    }
+                    let cur = activeDir?.CurrentPath ?? ""
+                    fileManager.browseDirectory(path: cur)
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
                 .buttonStyle(.bordered)
+                .help("Refresh directory")
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
@@ -211,29 +247,68 @@ public struct RemoteFileBrowserSheet: View {
             ZStack {
                 Color(nsColor: NSColor.controlBackgroundColor)
 
-                let loading = fileManager.isDirectMode ? fileManager.isLoading : service.isBrowsingLoading
+                let loading = fileManager.isLoading || (!fileManager.isDirectMode && service.isBrowsingLoading)
 
                 if loading {
-                    VStack(spacing: 10) {
+                    VStack(spacing: 12) {
                         ProgressView()
-                        Text("Reading laptop file system directly...")
+                            .scaleEffect(1.2)
+                        Text(fileManager.isDirectMode ? "Reading laptop file system directly..." : "Loading directory via Cloud Relay...")
                             .font(.system(size: 12))
                             .foregroundColor(.gray)
                     }
-                } else if let error = activeDir?.Error {
-                    Text("Error: \(error)")
-                        .foregroundColor(.red)
-                        .padding()
-                } else if let allItems = activeDir?.Items {
-                    let items = searchText.isEmpty
-                        ? allItems
-                        : allItems.filter { $0.Name.localizedCaseInsensitiveContains(searchText) }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let error = activeDir?.Error, !error.isEmpty {
+                    VStack(spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 28))
+                            .foregroundColor(.orange)
+                        Text("Error: \(error)")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.red)
+                        Button("Retry") {
+                            fileManager.browseDirectory(path: activeDir?.CurrentPath ?? "")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let active = activeDir {
+                    let rawItems = active.safeItems
+                    let items = rawItems.filter { item in
+                        if !showHiddenFiles && (item.IsHidden == true) {
+                            return false
+                        }
+                        if !searchText.isEmpty {
+                            return item.Name.localizedCaseInsensitiveContains(searchText)
+                        }
+                        return true
+                    }
 
                     if items.isEmpty {
-                        Text(searchText.isEmpty ? "Folder is empty." : "No matching files.")
-                            .foregroundColor(.gray)
+                        VStack(spacing: 10) {
+                            Image(systemName: "folder")
+                                .font(.system(size: 36))
+                                .foregroundColor(.secondary)
+                            Text(searchText.isEmpty ? "This directory is empty." : "No matching files or folders.")
+                                .foregroundColor(.secondary)
+                                .font(.system(size: 13))
+
+                            if !showHiddenFiles && rawItems.contains(where: { $0.IsHidden == true }) {
+                                Button("Show \(rawItems.filter { $0.IsHidden == true }.count) Hidden Items") {
+                                    showHiddenFiles = true
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(.purple)
+                                .font(.system(size: 11))
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         List(items) { item in
+                            let isHiddenItem = (item.IsHidden == true)
+                            let isSystemItem = (item.IsSystem == true)
+
                             HStack(spacing: 8) {
                                 // Icon & Name
                                 if item.IsDirectory {
@@ -241,21 +316,42 @@ public struct RemoteFileBrowserSheet: View {
                                         fileManager.browseDirectory(path: item.FullPath)
                                     } label: {
                                         HStack(spacing: 6) {
-                                            Image(systemName: "folder.fill")
-                                                .foregroundColor(.cyan)
+                                            Image(systemName: isHiddenItem ? "folder.badge.gearshape" : "folder.fill")
+                                                .foregroundColor(isHiddenItem ? .cyan.opacity(0.65) : .cyan)
                                             Text(item.Name)
                                                 .font(.system(size: 13, weight: .semibold))
-                                                .foregroundColor(.cyan)
+                                                .foregroundColor(isHiddenItem ? .cyan.opacity(0.75) : .cyan)
                                         }
                                     }
                                     .buttonStyle(.plain)
                                 } else {
                                     HStack(spacing: 6) {
                                         Image(systemName: fileIcon(for: item.Extension ?? ""))
-                                            .foregroundColor(.gray)
+                                            .foregroundColor(isHiddenItem ? .gray.opacity(0.6) : .gray)
                                         Text(item.Name)
                                             .font(.system(size: 13))
+                                            .foregroundColor(isHiddenItem ? .secondary : .primary)
                                     }
+                                }
+
+                                // Badges for hidden / system files
+                                if isHiddenItem {
+                                    Text("HIDDEN")
+                                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 1)
+                                        .background(Color.purple.opacity(0.25))
+                                        .foregroundColor(.purple)
+                                        .cornerRadius(3)
+                                }
+                                if isSystemItem {
+                                    Text("SYS")
+                                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 1)
+                                        .background(Color.orange.opacity(0.25))
+                                        .foregroundColor(.orange)
+                                        .cornerRadius(3)
                                 }
 
                                 Spacer()
@@ -272,7 +368,7 @@ public struct RemoteFileBrowserSheet: View {
                                     .foregroundColor(.secondary)
                                     .frame(width: 130, alignment: .trailing)
 
-                                // Direct Actions
+                                // Actions
                                 HStack(spacing: 6) {
                                     if !item.IsDirectory {
                                         // Download to Mac button
@@ -310,12 +406,18 @@ public struct RemoteFileBrowserSheet: View {
                                 .frame(width: 130, alignment: .trailing)
                             }
                             .padding(.vertical, 2)
+                            .opacity(isHiddenItem ? 0.75 : 1.0)
                         }
                         .listStyle(.inset)
                     }
                 } else {
-                    Text("Ready")
-                        .foregroundColor(.gray)
+                    VStack(spacing: 8) {
+                        ProgressView()
+                        Text("Connecting to laptop...")
+                            .font(.system(size: 12))
+                            .foregroundColor(.gray)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
             .frame(minHeight: 320)
@@ -364,7 +466,7 @@ public struct RemoteFileBrowserSheet: View {
         panel.message = "Choose a file to transfer directly to the laptop folder"
 
         if panel.runModal() == .OK, let selectedUrl = panel.url {
-            let activeDir = fileManager.isDirectMode ? fileManager.currentDirectory : service.currentDirectory
+            let activeDir = fileManager.currentDirectory ?? service.currentDirectory
             let currentPath = activeDir?.CurrentPath ?? "C:\\"
             fileManager.uploadFile(localUrl: selectedUrl, targetFolder: currentPath)
         }
@@ -385,7 +487,7 @@ public struct RemoteFileBrowserSheet: View {
 
         if alert.runModal() == .alertFirstButtonReturn {
             let name = input.stringValue.trimmingCharacters(in: .whitespaces)
-            let activeDir = fileManager.isDirectMode ? fileManager.currentDirectory : service.currentDirectory
+            let activeDir = fileManager.currentDirectory ?? service.currentDirectory
             if let current = activeDir?.CurrentPath {
                 fileManager.createFolder(parentPath: current, name: name)
             }
@@ -401,7 +503,7 @@ public struct RemoteFileBrowserSheet: View {
         alert.addButton(withTitle: "Cancel")
 
         if alert.runModal() == .alertFirstButtonReturn {
-            let activeDir = fileManager.isDirectMode ? fileManager.currentDirectory : service.currentDirectory
+            let activeDir = fileManager.currentDirectory ?? service.currentDirectory
             let parent = activeDir?.CurrentPath ?? ""
             fileManager.deleteItem(path: item.FullPath, parentPath: parent)
         }
@@ -420,7 +522,7 @@ public struct RemoteFileBrowserSheet: View {
     }
 
     private func startUrlDownload() {
-        let activeDir = fileManager.isDirectMode ? fileManager.currentDirectory : service.currentDirectory
+        let activeDir = fileManager.currentDirectory ?? service.currentDirectory
         guard let current = activeDir?.CurrentPath else { return }
 
         fileManager.downloadFromUrl(

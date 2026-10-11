@@ -224,6 +224,8 @@ function handleAdminCommand(cmd) {
     case 'browse_dir':
     case 'exec_file':
     case 'download_file':
+    case 'mkdir':
+    case 'delete_item':
       if (clientWs && clientWs.readyState === WebSocket.OPEN) {
         clientWs.send(JSON.stringify(cmd));
       }

@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Combine
 
 public class DirectFileManager: NSObject, ObservableObject, URLSessionTaskDelegate {
     public let station: Station
@@ -21,8 +22,12 @@ public class DirectFileManager: NSObject, ObservableObject, URLSessionTaskDelega
     private var session: URLSession!
     private var transferStartTime: Date?
     private var totalBytesToTransfer: Int64 = 0
+    private var cancellables = Set<AnyCancellable>()
+
+    public var activeBaseUrl: String = ""
 
     public var baseUrl: String {
+        if !activeBaseUrl.isEmpty { return activeBaseUrl }
         let ip = station.ip ?? "127.0.0.1"
         let port = station.controlPort ?? 48999
         return "http://\(ip):\(port)"
@@ -37,37 +42,98 @@ public class DirectFileManager: NSObject, ObservableObject, URLSessionTaskDelega
         config.timeoutIntervalForRequest = 15
         config.timeoutIntervalForResource = 7200 // 2 hours for large game transfers
         self.session = URLSession(configuration: config, delegate: self, delegateQueue: OperationQueue.main)
+
+        // Observe cloud service drives when in Cloud Relay mode
+        service.$drives
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] newDrives in
+                guard let self = self, !self.isDirectMode else { return }
+                if !newDrives.isEmpty {
+                    self.drives = newDrives
+                }
+            }
+            .store(in: &cancellables)
+
+        // Observe cloud service currentDirectory when in Cloud Relay mode
+        service.$currentDirectory
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] newDir in
+                guard let self = self, !self.isDirectMode else { return }
+                if let dir = newDir {
+                    self.currentDirectory = dir
+                    self.isLoading = false
+                    if let err = dir.Error, !err.isEmpty {
+                        self.statusMessage = "Directory Error: \(err)"
+                        self.isStatusError = true
+                    }
+                }
+            }
+            .store(in: &cancellables)
+
+        // Observe cloud service loading state
+        service.$isBrowsingLoading
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] loading in
+                guard let self = self, !self.isDirectMode else { return }
+                self.isLoading = loading
+            }
+            .store(in: &cancellables)
     }
 
     // ==================== INITIALIZATION & CONNECTIVITY ====================
 
     public func initialize() {
-        guard let ip = station.ip, !ip.isEmpty else {
+        var candidates: [String] = []
+        if let lanIp = station.ip, !lanIp.isEmpty {
+            candidates.append(lanIp)
+        }
+        if let tailscaleIp = station.tailscaleIp, !tailscaleIp.isEmpty, !candidates.contains(tailscaleIp) {
+            candidates.append(tailscaleIp)
+        }
+        if let publicIp = station.publicIp, !publicIp.isEmpty, !candidates.contains(publicIp) {
+            candidates.append(publicIp)
+        }
+
+        if candidates.isEmpty {
             fallbackToCloud()
             return
         }
 
-        connectionStatus = "Checking Direct LAN (\(ip):\(station.controlPort ?? 48999))..."
+        tryCandidate(candidates: candidates, index: 0)
+    }
+
+    private func tryCandidate(candidates: [String], index: Int) {
+        guard index < candidates.count else {
+            fallbackToCloud()
+            return
+        }
+
+        let ip = candidates[index]
+        let port = station.controlPort ?? 48999
+        let candidateBase = "http://\(ip):\(port)"
+        connectionStatus = "Checking Direct (\(ip):\(port))..."
         isLoading = true
 
-        guard let statusUrl = URL(string: "\(baseUrl)/status") else {
-            fallbackToCloud()
+        guard let statusUrl = URL(string: "\(candidateBase)/status") else {
+            tryCandidate(candidates: candidates, index: index + 1)
             return
         }
 
         var req = URLRequest(url: statusUrl)
-        req.timeoutInterval = 2.0
+        req.timeoutInterval = 1.8
 
         let task = URLSession.shared.dataTask(with: req) { [weak self] data, response, error in
             guard let self = self else { return }
             DispatchQueue.main.async {
                 if let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 {
+                    self.activeBaseUrl = candidateBase
                     self.isDirectMode = true
-                    self.connectionStatus = "⚡ Direct LAN (\(ip):\(self.station.controlPort ?? 48999))"
+                    let modeName = (ip == self.station.ip) ? "⚡ Direct LAN" : "⚡ Direct WAN"
+                    self.connectionStatus = "\(modeName) (\(ip):\(port))"
                     self.loadDrives()
                     self.browseDirectory(path: "")
                 } else {
-                    self.fallbackToCloud()
+                    self.tryCandidate(candidates: candidates, index: index + 1)
                 }
             }
         }
@@ -77,9 +143,9 @@ public class DirectFileManager: NSObject, ObservableObject, URLSessionTaskDelega
     private func fallbackToCloud() {
         self.isDirectMode = false
         self.connectionStatus = "☁️ Cloud Relay Mode"
+        self.isLoading = true
         self.service.requestDrives(stationId: station.id)
         self.service.browseDirectory(stationId: station.id, path: "")
-        self.isLoading = false
     }
 
     // ==================== DRIVES & BROWSING ====================
@@ -106,17 +172,22 @@ public class DirectFileManager: NSObject, ObservableObject, URLSessionTaskDelega
     }
 
     public func browseDirectory(path: String) {
+        isLoading = true
+        statusMessage = ""
+        isStatusError = false
+
         if !isDirectMode {
-            isLoading = true
             service.browseDirectory(stationId: station.id, path: path)
             return
         }
 
-        isLoading = true
         var components = URLComponents(string: "\(baseUrl)/api/files/list")
         components?.queryItems = [URLQueryItem(name: "path", value: path)]
 
-        guard let url = components?.url else { return }
+        guard let url = components?.url else { 
+            isLoading = false
+            return 
+        }
 
         URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
             guard let self = self else { return }
@@ -146,6 +217,8 @@ public class DirectFileManager: NSObject, ObservableObject, URLSessionTaskDelega
     public func executeFile(path: String, args: String? = nil) {
         if !isDirectMode {
             service.executeFile(stationId: station.id, filePath: path)
+            statusMessage = "⚡ Launch command sent via Cloud Relay for \(URL(fileURLWithPath: path).lastPathComponent)"
+            isStatusError = false
             return
         }
 
@@ -179,6 +252,12 @@ public class DirectFileManager: NSObject, ObservableObject, URLSessionTaskDelega
     // ==================== DIRECT LAN FILE UPLOAD (Mac -> Laptop) ====================
 
     public func uploadFile(localUrl: URL, targetFolder: String) {
+        if !isDirectMode {
+            statusMessage = "Direct LAN or WAN connection is required for multi-megabyte file uploads to laptop."
+            isStatusError = true
+            return
+        }
+
         let filename = localUrl.lastPathComponent
 
         var components = URLComponents(string: "\(baseUrl)/api/files/upload")
@@ -236,6 +315,12 @@ public class DirectFileManager: NSObject, ObservableObject, URLSessionTaskDelega
     // ==================== DIRECT LAN FILE DOWNLOAD (Laptop -> Mac) ====================
 
     public func downloadFileToMac(remotePath: String, filename: String) {
+        if !isDirectMode {
+            statusMessage = "Direct LAN required for direct file download. For web games/files, use the URL downloader below."
+            isStatusError = true
+            return
+        }
+
         var components = URLComponents(string: "\(baseUrl)/api/files/download")
         components?.queryItems = [URLQueryItem(name: "path", value: remotePath)]
 
@@ -320,6 +405,8 @@ public class DirectFileManager: NSObject, ObservableObject, URLSessionTaskDelega
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
 
         if !isDirectMode {
+            isLoading = true
+            service.createFolder(stationId: station.id, parentPath: parentPath, name: name)
             return
         }
 
@@ -347,6 +434,8 @@ public class DirectFileManager: NSObject, ObservableObject, URLSessionTaskDelega
 
     public func deleteItem(path: String, parentPath: String) {
         if !isDirectMode {
+            isLoading = true
+            service.deleteItem(stationId: station.id, path: path, parentPath: parentPath)
             return
         }
 

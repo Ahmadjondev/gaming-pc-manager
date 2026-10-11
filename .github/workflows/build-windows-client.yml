@@ -53,16 +53,15 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
         with:
-          tag_name: v1.2.0
-          name: "Game Booster Windows Setup v1.2.0 (Direct 60 FPS LAN/WAN Control)"
+          tag_name: v1.2.1
+          name: "Game Booster Windows Setup v1.2.1 (Files, Hidden Files & Direct LAN/WAN)"
           body: |
-            ### ⚡ Game Booster v1.2.0 Release:
-            - **Fully Rebranded to Game Booster**: Executable, background tasks, service entries, and tray controls are now Game Booster.
+            ### ⚡ Game Booster v1.2.1 Release:
+            - **Safe Remote File Explorer**: Fixed directory enumeration hangs on Windows junction points (`Application Data`, `$RECYCLE.BIN`, `System Volume Information`).
+            - **Hidden & System Files Enumeration**: Full visibility for hidden files/folders with dedicated indicators and toggle in the Mac manager.
+            - **Remote Folder & File Management**: Create new directories and delete items with instant UI updates across Direct LAN and Cloud Relay.
             - **Direct LAN & WAN 60 FPS Remote Control**: Built-in ultra-low latency direct streaming (<3ms latency) over port 48999.
-            - **UPnP Auto-Port Forwarding**: Automatically requests router port mapping for seamless Internet WAN streaming.
-            - **Tailscale Mesh Integration**: Native discovery of Tailscale encrypted P2P IP.
-            - **Interactive Remote Input**: Real-time mouse and keyboard control with Win32 `SendInput`.
-            - **Automated Installer & Migration**: `install.bat` cleanly migrates prior configs and registers highest-privilege auto-start.
+            - **UPnP & Tailscale Mesh**: Auto-discovery and port forwarding for seamless local and remote connections.
           files: GameBooster-Windows-Setup.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

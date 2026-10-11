@@ -252,16 +252,73 @@ namespace GameBooster
                         break;
 
                     case "browse_dir":
-                        Task.Run(async () =>
+                        _ = Task.Run(async () =>
                         {
-                            string? path = root.TryGetProperty("path", out var pp) ? pp.GetString() : null;
-                            var result = RemoteFileManager.ListDirectory(path);
-                            await SendJsonAsync(new
+                            try
                             {
-                                type = "dir_listing",
-                                stationId = _config.StationId,
-                                result = result
-                            }, CancellationToken.None);
+                                string? path = root.TryGetProperty("path", out var pp) ? pp.GetString() : null;
+                                Console.WriteLine($"[GameBooster] Browsing directory: {path ?? "<default>"}");
+                                var result = RemoteFileManager.ListDirectory(path);
+                                Console.WriteLine($"[GameBooster] Listing complete: {result.CurrentPath} ({result.Items.Count} items, Error: {result.Error ?? "none"})");
+                                await SendJsonAsync(new
+                                {
+                                    type = "dir_listing",
+                                    stationId = _config.StationId,
+                                    result = result
+                                }, CancellationToken.None);
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"[GameBooster] browse_dir error: {ex.Message}");
+                            }
+                        });
+                        break;
+
+                    case "mkdir":
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                string parent = root.TryGetProperty("parent", out var pp) ? pp.GetString() ?? "" : "";
+                                string name = root.TryGetProperty("name", out var np) ? np.GetString() ?? "" : "";
+                                Console.WriteLine($"[GameBooster] Creating folder '{name}' in '{parent}'");
+                                RemoteFileManager.CreateFolder(parent, name);
+                                var result = RemoteFileManager.ListDirectory(parent);
+                                await SendJsonAsync(new
+                                {
+                                    type = "dir_listing",
+                                    stationId = _config.StationId,
+                                    result = result
+                                }, CancellationToken.None);
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"[GameBooster] mkdir error: {ex.Message}");
+                            }
+                        });
+                        break;
+
+                    case "delete_item":
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                string path = root.TryGetProperty("path", out var pp) ? pp.GetString() ?? "" : "";
+                                string parent = root.TryGetProperty("parent", out var prp) ? prp.GetString() ?? "" : "";
+                                Console.WriteLine($"[GameBooster] Deleting item: {path}");
+                                RemoteFileManager.DeleteItem(path);
+                                var result = RemoteFileManager.ListDirectory(parent);
+                                await SendJsonAsync(new
+                                {
+                                    type = "dir_listing",
+                                    stationId = _config.StationId,
+                                    result = result
+                                }, CancellationToken.None);
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"[GameBooster] delete_item error: {ex.Message}");
+                            }
                         });
                         break;
 
@@ -336,7 +393,15 @@ namespace GameBooster
 
                 string json = JsonSerializer.Serialize(data);
                 byte[] bytes = Encoding.UTF8.GetBytes(json);
-                await _webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, ct);
+
+                // Chunk frames in 32KB pieces to prevent buffer overflow on large directories
+                const int chunkSize = 32768;
+                for (int offset = 0; offset < bytes.Length; offset += chunkSize)
+                {
+                    int count = Math.Min(chunkSize, bytes.Length - offset);
+                    bool isLast = (offset + count >= bytes.Length);
+                    await _webSocket.SendAsync(new ArraySegment<byte>(bytes, offset, count), WebSocketMessageType.Text, isLast, ct);
+                }
             }
             catch (Exception ex)
             {

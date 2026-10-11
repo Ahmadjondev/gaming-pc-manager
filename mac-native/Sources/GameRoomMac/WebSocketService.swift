@@ -160,14 +160,24 @@ public class WebSocketService: NSObject, ObservableObject {
                 if let drivesData = try? JSONSerialization.data(withJSONObject: json["drives"] ?? []),
                    let list = try? JSONDecoder().decode([DriveItem].self, from: drivesData) {
                     self.drives = list
+                    print("[WebSocketService] Loaded \(list.count) drives")
+                } else {
+                    print("[WebSocketService] Failed to parse drives_listing")
                 }
 
             case "dir_listing":
+                self.isBrowsingLoading = false
                 if let resDict = json["result"] as? [String: Any],
-                   let resData = try? JSONSerialization.data(withJSONObject: resDict),
-                   let res = try? JSONDecoder().decode(DirectoryContentResult.self, from: resData) {
-                    self.currentDirectory = res
-                    self.isBrowsingLoading = false
+                   let resData = try? JSONSerialization.data(withJSONObject: resDict) {
+                    do {
+                        let res = try JSONDecoder().decode(DirectoryContentResult.self, from: resData)
+                        self.currentDirectory = res
+                        print("[WebSocketService] Loaded dir_listing: \(res.CurrentPath) (\(res.safeItems.count) items)")
+                    } catch {
+                        print("[WebSocketService] Failed to decode dir_listing: \(error)")
+                    }
+                } else {
+                    print("[WebSocketService] Invalid dir_listing data")
                 }
 
             case "download_progress":
@@ -251,6 +261,14 @@ public class WebSocketService: NSObject, ObservableObject {
 
     public func executeFile(stationId: String, filePath: String) {
         sendJson(["action": "exec_file", "targetId": stationId, "filePath": filePath])
+    }
+
+    public func createFolder(stationId: String, parentPath: String, name: String) {
+        sendJson(["action": "mkdir", "targetId": stationId, "parent": parentPath, "name": name])
+    }
+
+    public func deleteItem(stationId: String, path: String, parentPath: String) {
+        sendJson(["action": "delete_item", "targetId": stationId, "path": path, "parent": parentPath])
     }
 
     public func downloadFile(stationId: String, url: String, destinationFolder: String, fileName: String?) {

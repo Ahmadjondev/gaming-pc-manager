@@ -30,6 +30,8 @@ namespace GameBooster
             public string SizeFormatted { get; set; } = string.Empty;
             public string Extension { get; set; } = string.Empty;
             public bool IsExecutable { get; set; }
+            public bool IsHidden { get; set; }
+            public bool IsSystem { get; set; }
             public string LastModified { get; set; } = string.Empty;
         }
 
@@ -71,9 +73,15 @@ namespace GameBooster
             var result = new DirectoryContentResult();
             try
             {
-                string targetPath = string.IsNullOrWhiteSpace(path) 
-                    ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) 
-                    : path;
+                string targetPath = path ?? "";
+                if (string.IsNullOrWhiteSpace(targetPath))
+                {
+                    targetPath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                    if (string.IsNullOrEmpty(targetPath) || !Directory.Exists(targetPath))
+                    {
+                        targetPath = "C:\\";
+                    }
+                }
 
                 if (!Directory.Exists(targetPath))
                 {
@@ -85,47 +93,91 @@ namespace GameBooster
                 var parent = Directory.GetParent(result.CurrentPath);
                 result.ParentPath = parent?.FullName;
 
-                // Subdirectories
                 var dirInfo = new DirectoryInfo(result.CurrentPath);
-                foreach (var dir in dirInfo.EnumerateDirectories())
-                {
-                    // Skip hidden/system directories
-                    if ((dir.Attributes & FileAttributes.Hidden) != 0 || (dir.Attributes & FileAttributes.System) != 0)
-                        continue;
 
-                    result.Items.Add(new FileSystemEntry
+                var enumOptions = new EnumerationOptions
+                {
+                    IgnoreInaccessible = true,
+                    AttributesToSkip = 0, // Include hidden and system files/folders!
+                    RecurseSubdirectories = false,
+                    ReturnSpecialDirectories = false
+                };
+
+                // Subdirectories (including hidden ones)
+                var subdirs = new List<FileSystemEntry>();
+                try
+                {
+                    foreach (var dir in dirInfo.EnumerateDirectories("*", enumOptions))
                     {
-                        Name = dir.Name,
-                        FullPath = dir.FullName,
-                        IsDirectory = true,
-                        LastModified = dir.LastWriteTime.ToString("yyyy-MM-dd HH:mm")
-                    });
+                        try
+                        {
+                            bool isHidden = (dir.Attributes & FileAttributes.Hidden) != 0;
+                            bool isSystem = (dir.Attributes & FileAttributes.System) != 0;
+
+                            subdirs.Add(new FileSystemEntry
+                            {
+                                Name = dir.Name,
+                                FullPath = dir.FullName,
+                                IsDirectory = true,
+                                IsHidden = isHidden,
+                                IsSystem = isSystem,
+                                LastModified = dir.LastWriteTime.ToString("yyyy-MM-dd HH:mm")
+                            });
+                        }
+                        catch { }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[FileManager] Warning enumerating dirs: {ex.Message}");
                 }
 
-                // Files
-                string[] execExtensions = { ".exe", ".msi", ".bat", ".cmd", ".ps1", ".iso", ".zip", ".rar" };
-                foreach (var file in dirInfo.EnumerateFiles())
-                {
-                    if ((file.Attributes & FileAttributes.Hidden) != 0)
-                        continue;
+                subdirs.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+                result.Items.AddRange(subdirs);
 
-                    string ext = file.Extension.ToLowerInvariant();
-                    result.Items.Add(new FileSystemEntry
+                // Files (including hidden ones)
+                var files = new List<FileSystemEntry>();
+                string[] execExtensions = { ".exe", ".msi", ".bat", ".cmd", ".ps1", ".iso", ".zip", ".rar", ".7z", ".tar", ".gz" };
+
+                try
+                {
+                    foreach (var file in dirInfo.EnumerateFiles("*", enumOptions))
                     {
-                        Name = file.Name,
-                        FullPath = file.FullName,
-                        IsDirectory = false,
-                        SizeBytes = file.Length,
-                        SizeFormatted = FormatFileSize(file.Length),
-                        Extension = ext,
-                        IsExecutable = execExtensions.Contains(ext),
-                        LastModified = file.LastWriteTime.ToString("yyyy-MM-dd HH:mm")
-                    });
+                        try
+                        {
+                            bool isHidden = (file.Attributes & FileAttributes.Hidden) != 0;
+                            bool isSystem = (file.Attributes & FileAttributes.System) != 0;
+                            string ext = file.Extension.ToLowerInvariant();
+
+                            files.Add(new FileSystemEntry
+                            {
+                                Name = file.Name,
+                                FullPath = file.FullName,
+                                IsDirectory = false,
+                                SizeBytes = file.Length,
+                                SizeFormatted = FormatFileSize(file.Length),
+                                Extension = ext,
+                                IsExecutable = execExtensions.Contains(ext),
+                                IsHidden = isHidden,
+                                IsSystem = isSystem,
+                                LastModified = file.LastWriteTime.ToString("yyyy-MM-dd HH:mm")
+                            });
+                        }
+                        catch { }
+                    }
                 }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[FileManager] Warning enumerating files: {ex.Message}");
+                }
+
+                files.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+                result.Items.AddRange(files);
             }
             catch (Exception ex)
             {
                 result.Error = ex.Message;
+                Console.WriteLine($"[FileManager] Error in ListDirectory: {ex.Message}");
             }
 
             return result;
