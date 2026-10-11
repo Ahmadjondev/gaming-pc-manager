@@ -32,6 +32,7 @@ function connect() {
       type: 'register',
       stationId: STATION_ID,
       stationName: STATION_NAME,
+      authToken: process.env.AUTH_TOKEN || 'gameroom_secret_key_2026',
       hostname: 'ROG-STRIX-WIN11',
       os: 'Microsoft Windows 11 Pro 64-bit (10.0.22631)',
       ip: '192.168.1.125'

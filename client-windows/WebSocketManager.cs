@@ -93,6 +93,7 @@ namespace GameRoomAgent
                 type = "register",
                 stationId = _config.StationId,
                 stationName = _config.StationName,
+                authToken = _config.AuthToken,
                 hostname = Environment.MachineName,
                 os = Environment.OSVersion.ToString(),
                 ip = HardwareMonitor.GetLocalIpAddress()

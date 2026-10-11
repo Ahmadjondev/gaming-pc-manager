@@ -5,6 +5,7 @@ const os = require('os');
 const { WebSocketServer, WebSocket } = require('ws');
 
 const PORT = process.env.PORT || 3000;
+const AUTH_TOKEN = process.env.AUTH_TOKEN || 'gameroom_secret_key_2026';
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 // In-memory state of gaming stations
@@ -232,6 +233,13 @@ function handleClientConnection(ws, req) {
       const msg = JSON.parse(data.toString());
 
       if (msg.type === 'register') {
+        if (AUTH_TOKEN && msg.authToken !== AUTH_TOKEN) {
+          console.warn(`[Security] Rejected unauthorized registration from ${remoteIp} (Invalid token)`);
+          ws.send(JSON.stringify({ error: 'Unauthorized: Invalid auth token' }));
+          ws.close(4001, 'Unauthorized');
+          return;
+        }
+
         stationId = msg.stationId || 'laptop-unknown';
         clientSockets.set(stationId, ws);
 

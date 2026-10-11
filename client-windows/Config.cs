@@ -9,6 +9,7 @@ namespace GameRoomAgent
         public string ServerUrl { get; set; } = "ws://192.168.1.100:3000/ws/client";
         public string StationId { get; set; } = "laptop-01";
         public string StationName { get; set; } = "Gaming Laptop 01";
+        public string AuthToken { get; set; } = "gameroom_secret_key_2026";
         public int TelemetryIntervalSeconds { get; set; } = 3;
         public bool AutoLockOnDisconnect { get; set; } = false;
 

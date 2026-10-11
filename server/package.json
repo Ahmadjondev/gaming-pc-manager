@@ -4,7 +4,8 @@
   "description": "Gaming Room PC Management Server & Dashboard for Mac",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "tunnel": "cloudflared tunnel --url http://localhost:3000"
   },
   "dependencies": {
     "ws": "^8.18.0"
