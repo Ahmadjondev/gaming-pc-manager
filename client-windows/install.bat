@@ -21,6 +21,10 @@ set DEFAULT_URL=wss://gaming-pc-manager.onrender.com/ws/client
 echo [*] Target Directory: %TARGET_DIR%
 if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
 
+echo [*] Stopping running GameRoomAgent instance if active...
+taskkill /F /IM GameRoomAgent.exe >nul 2>&1
+timeout /t 1 /nobreak >nul
+
 echo [*] Copying Agent Executable...
 copy /Y "%~dp0GameRoomAgent.exe" "%TARGET_DIR%\" >nul
 
