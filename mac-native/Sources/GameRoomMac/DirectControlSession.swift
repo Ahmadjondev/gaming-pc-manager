@@ -8,6 +8,7 @@ public class DirectControlSession: NSObject, ObservableObject {
     @Published public var currentFps: Int = 0
     @Published public var pingMs: Int = 0
     @Published public var targetFps: Int = 60
+    @Published public var selectedResolution: Int = 1280
     @Published public var isInputEnabled: Bool = true
     @Published public var errorMessage: String? = nil
 
@@ -21,6 +22,7 @@ public class DirectControlSession: NSObject, ObservableObject {
     private var frameCounter: Int = 0
     private var lastFpsCalculationTime: Date = Date()
     private var pingTimer: Timer?
+    private var connectTimeoutTimer: Timer?
 
     public init(ip: String, port: Int = 48999) {
         self.host = ip
@@ -32,6 +34,9 @@ public class DirectControlSession: NSObject, ObservableObject {
 
     public func connect() {
         isCancelled = false
+        connectTimeoutTimer?.invalidate()
+        connectTimeoutTimer = nil
+
         guard let url = URL(string: "ws://\(host):\(port)/control") else {
             self.connectionStatus = "Invalid Address"
             self.errorMessage = "Invalid IP or Port: ws://\(host):\(port)/control"
@@ -40,6 +45,22 @@ public class DirectControlSession: NSObject, ObservableObject {
 
         self.connectionStatus = "Connecting to \(host):\(port)..."
         self.errorMessage = nil
+
+        let localMacIp = Self.getLocalMacIp() ?? "Unknown"
+        let sameSubnet = Self.isSameSubnet(ip1: localMacIp, ip2: host)
+
+        // 3.5-second timeout with network mismatch diagnostic
+        connectTimeoutTimer = Timer.scheduledTimer(withTimeInterval: 3.5, repeats: false) { [weak self] _ in
+            guard let self = self, !self.isConnected, !self.isCancelled else { return }
+            DispatchQueue.main.async {
+                self.connectionStatus = "Connection Failed"
+                if !sameSubnet && localMacIp != "Unknown" {
+                    self.errorMessage = "⚠️ Wi-Fi Network Mismatch Detected!\n\n• Your Mac is connected to: \(localMacIp)\n• Your Laptop is connected to: \(self.host)\n\nBecause your Mac and Laptop are on different networks, direct LAN streaming cannot reach the laptop.\n\n👉 Fix: Connect both your Mac and Laptop to the SAME Wi-Fi network (or connect your laptop to your iPhone hotspot)."
+                } else {
+                    self.errorMessage = "Could not reach \(self.host):\(self.port) within 3.5 seconds.\nMake sure GameRoomAgent is running on the laptop and port \(self.port) is open on your firewall."
+                }
+            }
+        }
 
         webSocketTask = session.webSocketTask(with: url)
         webSocketTask?.resume()
@@ -53,6 +74,8 @@ public class DirectControlSession: NSObject, ObservableObject {
 
     public func disconnect() {
         isCancelled = true
+        connectTimeoutTimer?.invalidate()
+        connectTimeoutTimer = nil
         pingTimer?.invalidate()
         pingTimer = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
@@ -107,6 +130,8 @@ public class DirectControlSession: NSObject, ObservableObject {
                 if !self.isConnected {
                     self.isConnected = true
                     self.connectionStatus = "Connected (LAN 60 FPS)"
+                    self.connectTimeoutTimer?.invalidate()
+                    self.connectTimeoutTimer = nil
                 }
 
                 // FPS tracking
@@ -133,6 +158,8 @@ public class DirectControlSession: NSObject, ObservableObject {
                     if !self.isConnected {
                         self.isConnected = true
                         self.connectionStatus = "Connected (LAN 60 FPS)"
+                        self.connectTimeoutTimer?.invalidate()
+                        self.connectTimeoutTimer = nil
                     }
                 }
             }
@@ -197,11 +224,49 @@ public class DirectControlSession: NSObject, ObservableObject {
         sendJson(["type": "set_quality", "quality": quality])
     }
 
+    public func setResolution(_ width: Int) {
+        self.selectedResolution = width
+        sendJson(["type": "set_resolution", "maxWidth": width])
+    }
+
     private func sendJson(_ dict: [String: Any]) {
         guard let task = webSocketTask, task.state == .running else { return }
         if let data = try? JSONSerialization.data(withJSONObject: dict),
            let str = String(data: data, encoding: .utf8) {
             task.send(.string(str)) { _ in }
         }
+    }
+
+    public static func isSameSubnet(ip1: String, ip2: String) -> Bool {
+        let p1 = ip1.split(separator: ".")
+        let p2 = ip2.split(separator: ".")
+        guard p1.count == 4 && p2.count == 4 else { return false }
+        return p1[0] == p2[0] && p1[1] == p2[1] && p1[2] == p2[2]
+    }
+
+    public static func getLocalMacIp() -> String? {
+        var address: String?
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddr) == 0, let firstAddr = ifaddr else { return nil }
+        defer { freeifaddrs(ifaddr) }
+
+        for ptr in sequence(first: firstAddr, next: { $0.pointee.ifa_next }) {
+            let flags = Int32(ptr.pointee.ifa_flags)
+            let addr = ptr.pointee.ifa_addr.pointee
+
+            if (flags & (IFF_UP|IFF_RUNNING|IFF_LOOPBACK)) == (IFF_UP|IFF_RUNNING) {
+                if addr.sa_family == UInt8(AF_INET) {
+                    var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                    if getnameinfo(ptr.pointee.ifa_addr, socklen_t(addr.sa_len), &hostname, socklen_t(hostname.count), nil, 0, NI_NUMERICHOST) == 0 {
+                        let ip = String(cString: hostname)
+                        if ip != "127.0.0.1" && !ip.hasPrefix("169.254") {
+                            address = ip
+                            break
+                        }
+                    }
+                }
+            }
+        }
+        return address
     }
 }

@@ -7,6 +7,7 @@ public struct DirectRemoteControlView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var session: DirectControlSession
     @State private var showingFilesSheet: Bool = false
+    @State private var showingCloudPreview: Bool = false
 
     public init(station: Station, service: WebSocketService? = nil) {
         self.station = station
@@ -79,6 +80,18 @@ public struct DirectRemoteControlView: View {
                     .background(Color.blue.opacity(0.15))
                     .foregroundColor(.blue)
                     .cornerRadius(6)
+
+                    // Resolution Picker
+                    Picker("", selection: $session.selectedResolution) {
+                        Text("⚡ 720p (Fast 60 FPS)").tag(1280)
+                        Text("🖥️ 1080p (Sharp)").tag(1920)
+                        Text("💎 Native Full").tag(0)
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 150)
+                    .onChange(of: session.selectedResolution) { newRes in
+                        session.setResolution(newRes)
+                    }
 
                     // FPS Target Picker
                     Picker("", selection: $session.targetFps) {
@@ -189,17 +202,41 @@ public struct DirectRemoteControlView: View {
                             .foregroundColor(.white)
 
                         if let err = session.errorMessage {
-                            Text(err)
-                                .font(.subheadline)
-                                .foregroundColor(.red)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 40)
+                            VStack(spacing: 12) {
+                                Image(systemName: "wifi.exclamationmark")
+                                    .font(.system(size: 34))
+                                    .foregroundColor(.orange)
 
-                            Button("Retry Direct Connection") {
-                                session.connect()
+                                Text(err)
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.white)
+                                    .multilineTextAlignment(.center)
+                                    .padding(16)
+                                    .background(Color.white.opacity(0.06))
+                                    .cornerRadius(10)
+                                    .frame(maxWidth: 580)
+
+                                HStack(spacing: 12) {
+                                    Button("🔄 Retry Direct Connection") {
+                                        session.connect()
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(.cyan)
+
+                                    if service != nil {
+                                        Button("☁️ Open Cloud Preview (Anywhere)") {
+                                            showingCloudPreview = true
+                                        }
+                                        .buttonStyle(.bordered)
+                                    }
+
+                                    Button("📋 Copy Laptop IP") {
+                                        copyIp()
+                                    }
+                                    .buttonStyle(.bordered)
+                                }
+                                .padding(.top, 6)
                             }
-                            .buttonStyle(.borderedProminent)
-                            .padding(.top, 8)
                         } else {
                             Text("Connecting directly to \(station.ip ?? "LAN"):48999 over local Wi-Fi...")
                                 .font(.caption)
@@ -213,6 +250,9 @@ public struct DirectRemoteControlView: View {
         .frame(minWidth: 960, minHeight: 640)
         .sheet(isPresented: $showingFilesSheet) {
             RemoteFileBrowserSheet(station: station, service: service ?? WebSocketService())
+        }
+        .sheet(isPresented: $showingCloudPreview) {
+            ScreenPreviewSheet(station: station, service: service ?? WebSocketService())
         }
         .onDisappear {
             session.disconnect()
