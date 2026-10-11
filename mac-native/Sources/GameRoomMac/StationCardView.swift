@@ -226,7 +226,7 @@ public struct StationCardView: View {
                 .stroke(borderColor, lineWidth: 1.5)
         )
         .sheet(isPresented: $showingDirectControl) {
-            DirectRemoteControlView(station: station)
+            DirectRemoteControlView(station: station, service: service)
         }
         .sheet(isPresented: $showingScreenSheet) {
             ScreenPreviewSheet(station: station, service: service)

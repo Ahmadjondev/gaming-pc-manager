@@ -250,7 +250,7 @@ public struct MainView: View {
             }
         }
         .sheet(item: $activeDirectControlStation) { st in
-            DirectRemoteControlView(station: st)
+            DirectRemoteControlView(station: st, service: service)
         }
     }
 

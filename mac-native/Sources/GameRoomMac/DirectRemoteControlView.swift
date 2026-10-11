@@ -3,11 +3,14 @@ import AppKit
 
 public struct DirectRemoteControlView: View {
     public let station: Station
+    public let service: WebSocketService?
     @Environment(\.dismiss) private var dismiss
     @StateObject private var session: DirectControlSession
+    @State private var showingFilesSheet: Bool = false
 
-    public init(station: Station) {
+    public init(station: Station, service: WebSocketService? = nil) {
         self.station = station
+        self.service = service
         let ip = station.ip ?? "127.0.0.1"
         let port = station.controlPort ?? 48999
         _session = StateObject(wrappedValue: DirectControlSession(ip: ip, port: port))
@@ -105,6 +108,23 @@ public struct DirectRemoteControlView: View {
                     }
                     .buttonStyle(.plain)
 
+                    // Direct Files Button
+                    Button(action: {
+                        showingFilesSheet = true
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "folder.fill")
+                            Text("Files")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+
                     // Windows Keys shortcuts
                     Menu {
                         Button("⊞ Windows Key") { session.sendSpecialKey("win") }
@@ -191,6 +211,9 @@ public struct DirectRemoteControlView: View {
             }
         }
         .frame(minWidth: 960, minHeight: 640)
+        .sheet(isPresented: $showingFilesSheet) {
+            RemoteFileBrowserSheet(station: station, service: service ?? WebSocketService())
+        }
         .onDisappear {
             session.disconnect()
         }
