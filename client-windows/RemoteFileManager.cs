@@ -214,12 +214,50 @@ namespace GameRoomAgent
             }
         }
 
-        private static string FormatFileSize(long bytes)
+        public static string FormatFileSize(long bytes)
         {
             if (bytes < 1024) return $"{bytes} B";
             if (bytes < 1024 * 1024) return $"{Math.Round(bytes / 1024.0, 1)} KB";
             if (bytes < 1024 * 1024 * 1024) return $"{Math.Round(bytes / (1024.0 * 1024.0), 1)} MB";
             return $"{Math.Round(bytes / (1024.0 * 1024.0 * 1024.0), 2)} GB";
+        }
+
+        public static (bool success, string message, string? path) CreateFolder(string parentPath, string folderName)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(folderName)) return (false, "Folder name is empty", null);
+                string newPath = Path.Combine(parentPath, folderName);
+                if (Directory.Exists(newPath)) return (false, "Folder already exists", newPath);
+                Directory.CreateDirectory(newPath);
+                return (true, $"Folder created: {folderName}", newPath);
+            }
+            catch (Exception ex)
+            {
+                return (false, $"Failed to create folder: {ex.Message}", null);
+            }
+        }
+
+        public static (bool success, string message) DeleteItem(string targetPath)
+        {
+            try
+            {
+                if (File.Exists(targetPath))
+                {
+                    File.Delete(targetPath);
+                    return (true, $"File deleted: {Path.GetFileName(targetPath)}");
+                }
+                if (Directory.Exists(targetPath))
+                {
+                    Directory.Delete(targetPath, true);
+                    return (true, $"Folder deleted: {Path.GetFileName(targetPath)}");
+                }
+                return (false, "Item not found");
+            }
+            catch (Exception ex)
+            {
+                return (false, $"Failed to delete: {ex.Message}");
+            }
         }
     }
 }

@@ -175,6 +175,211 @@ namespace GameRoomAgent
                 return;
             }
 
+            // ==================== DIRECT LAN FILE SYSTEM API ====================
+            // 1. Get Drives
+            if (path == "/api/files/drives")
+            {
+                var drives = RemoteFileManager.GetDrives();
+                byte[] data = JsonSerializer.SerializeToUtf8Bytes(drives);
+                res.ContentType = "application/json";
+                res.ContentLength64 = data.Length;
+                await res.OutputStream.WriteAsync(data, ct);
+                res.Close();
+                return;
+            }
+
+            // 2. List Directory
+            if (path == "/api/files/list")
+            {
+                string targetPath = req.QueryString["path"] ?? "";
+                var result = RemoteFileManager.ListDirectory(targetPath);
+                byte[] data = JsonSerializer.SerializeToUtf8Bytes(result);
+                res.ContentType = "application/json";
+                res.ContentLength64 = data.Length;
+                await res.OutputStream.WriteAsync(data, ct);
+                res.Close();
+                return;
+            }
+
+            // 3. Execute Program / Installer
+            if (path == "/api/files/exec" && req.HttpMethod == "POST")
+            {
+                using var reader = new StreamReader(req.InputStream, req.ContentEncoding);
+                string body = await reader.ReadToEndAsync(ct);
+                string filePath = "";
+                string? args = null;
+                try
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    filePath = doc.RootElement.TryGetProperty("filePath", out var fp) ? fp.GetString() ?? "" : "";
+                    args = doc.RootElement.TryGetProperty("args", out var ap) ? ap.GetString() : null;
+                }
+                catch { }
+
+                var (success, msg, pid) = RemoteFileManager.ExecuteFile(filePath, args);
+                byte[] data = JsonSerializer.SerializeToUtf8Bytes(new { success, message = msg, pid });
+                res.ContentType = "application/json";
+                res.ContentLength64 = data.Length;
+                await res.OutputStream.WriteAsync(data, ct);
+                res.Close();
+                return;
+            }
+
+            // 4. Direct High-Speed File Upload (Mac -> Windows Laptop)
+            if (path == "/api/files/upload" && req.HttpMethod == "POST")
+            {
+                string folder = req.QueryString["folder"] ?? "";
+                string filename = req.QueryString["filename"] ?? $"upload_{DateTime.Now:yyyyMMdd_HHmmss}.bin";
+                filename = Path.GetFileName(filename);
+
+                if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+                {
+                    folder = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                }
+
+                string destPath = Path.Combine(folder, filename);
+                try
+                {
+                    using (var fs = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                    {
+                        await req.InputStream.CopyToAsync(fs, ct);
+                    }
+                    var fi = new FileInfo(destPath);
+                    byte[] data = JsonSerializer.SerializeToUtf8Bytes(new { 
+                        success = true, 
+                        message = $"Uploaded {filename} successfully ({RemoteFileManager.FormatFileSize(fi.Length)})", 
+                        path = destPath, 
+                        size = fi.Length 
+                    });
+                    res.ContentType = "application/json";
+                    res.ContentLength64 = data.Length;
+                    await res.OutputStream.WriteAsync(data, ct);
+                }
+                catch (Exception ex)
+                {
+                    res.StatusCode = 500;
+                    byte[] data = JsonSerializer.SerializeToUtf8Bytes(new { success = false, message = ex.Message });
+                    res.ContentType = "application/json";
+                    res.ContentLength64 = data.Length;
+                    await res.OutputStream.WriteAsync(data, ct);
+                }
+                res.Close();
+                return;
+            }
+
+            // 5. Direct High-Speed File Download (Windows Laptop -> Mac)
+            if (path == "/api/files/download" && req.HttpMethod == "GET")
+            {
+                string filePath = req.QueryString["path"] ?? "";
+                if (!File.Exists(filePath))
+                {
+                    res.StatusCode = 404;
+                    byte[] err = Encoding.UTF8.GetBytes("File not found");
+                    res.ContentLength64 = err.Length;
+                    await res.OutputStream.WriteAsync(err, ct);
+                    res.Close();
+                    return;
+                }
+
+                try
+                {
+                    string fn = Path.GetFileName(filePath);
+                    res.ContentType = "application/octet-stream";
+                    res.AddHeader("Content-Disposition", $"attachment; filename=\"{fn}\"");
+                    var fi = new FileInfo(filePath);
+                    res.ContentLength64 = fi.Length;
+                    using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    {
+                        await fs.CopyToAsync(res.OutputStream, ct);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[DirectControl] Download error: {ex.Message}");
+                }
+                finally
+                {
+                    try { res.Close(); } catch { }
+                }
+                return;
+            }
+
+            // 6. Delete File or Folder
+            if (path == "/api/files/delete" && req.HttpMethod == "POST")
+            {
+                using var reader = new StreamReader(req.InputStream, req.ContentEncoding);
+                string body = await reader.ReadToEndAsync(ct);
+                string targetPath = "";
+                try
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    targetPath = doc.RootElement.TryGetProperty("path", out var pp) ? pp.GetString() ?? "" : "";
+                }
+                catch { }
+
+                var (success, msg) = RemoteFileManager.DeleteItem(targetPath);
+                byte[] data = JsonSerializer.SerializeToUtf8Bytes(new { success, message = msg });
+                res.ContentType = "application/json";
+                res.ContentLength64 = data.Length;
+                await res.OutputStream.WriteAsync(data, ct);
+                res.Close();
+                return;
+            }
+
+            // 7. Create Folder
+            if (path == "/api/files/mkdir" && req.HttpMethod == "POST")
+            {
+                using var reader = new StreamReader(req.InputStream, req.ContentEncoding);
+                string body = await reader.ReadToEndAsync(ct);
+                string parent = "";
+                string name = "";
+                try
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    parent = doc.RootElement.TryGetProperty("parent", out var pr) ? pr.GetString() ?? "" : "";
+                    name = doc.RootElement.TryGetProperty("name", out var nm) ? nm.GetString() ?? "" : "";
+                }
+                catch { }
+
+                var (success, msg, p) = RemoteFileManager.CreateFolder(parent, name);
+                byte[] data = JsonSerializer.SerializeToUtf8Bytes(new { success, message = msg, path = p });
+                res.ContentType = "application/json";
+                res.ContentLength64 = data.Length;
+                await res.OutputStream.WriteAsync(data, ct);
+                res.Close();
+                return;
+            }
+
+            // 8. Download from Web URL
+            if (path == "/api/files/download_url" && req.HttpMethod == "POST")
+            {
+                using var reader = new StreamReader(req.InputStream, req.ContentEncoding);
+                string body = await reader.ReadToEndAsync(ct);
+                string url = "";
+                string destinationFolder = "";
+                string? fileName = null;
+                try
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    url = doc.RootElement.TryGetProperty("url", out var up) ? up.GetString() ?? "" : "";
+                    destinationFolder = doc.RootElement.TryGetProperty("destinationFolder", out var dfp) ? dfp.GetString() ?? "" : "";
+                    fileName = doc.RootElement.TryGetProperty("fileName", out var fnp) ? fnp.GetString() : null;
+                }
+                catch { }
+
+                _ = Task.Run(async () =>
+                {
+                    await RemoteFileManager.DownloadFileAsync(url, destinationFolder, fileName);
+                });
+
+                byte[] data = JsonSerializer.SerializeToUtf8Bytes(new { success = true, message = "Download initiated" });
+                res.ContentType = "application/json";
+                res.ContentLength64 = data.Length;
+                await res.OutputStream.WriteAsync(data, ct);
+                res.Close();
+                return;
+            }
+
             res.ContentType = "text/html";
             byte[] htmlBytes = Encoding.UTF8.GetBytes($"<h3>Game Room Direct Control Server</h3><p>Station: {_config.StationName}</p><p>Status: Ready</p>");
             res.ContentLength64 = htmlBytes.Length;
