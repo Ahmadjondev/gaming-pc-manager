@@ -247,38 +247,65 @@ public class DirectFileManager: NSObject, ObservableObject, URLSessionTaskDelega
 
         let task = session.downloadTask(with: url) { [weak self] tempUrl, response, error in
             guard let self = self else { return }
-            DispatchQueue.main.async {
-                self.isTransferring = false
-                if let error = error {
+
+            if let error = error {
+                DispatchQueue.main.async {
+                    self.isTransferring = false
                     self.statusMessage = "Download failed: \(error.localizedDescription)"
                     self.isStatusError = true
-                    return
                 }
+                return
+            }
 
-                guard let tempUrl = tempUrl else { return }
-
-                // Move to ~/Downloads/
-                let downloadsUrl = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-                var destUrl = downloadsUrl.appendingPathComponent(filename)
-
-                // Avoid collision
-                var counter = 1
-                while FileManager.default.fileExists(atPath: destUrl.path) {
-                    let ext = (filename as NSString).pathExtension
-                    let base = (filename as NSString).deletingPathExtension
-                    let newName = "\(base) (\(counter)).\(ext)"
-                    destUrl = downloadsUrl.appendingPathComponent(newName)
-                    counter += 1
+            if let httpResp = response as? HTTPURLResponse, httpResp.statusCode >= 400 {
+                var errMsg = "Server returned HTTP \(httpResp.statusCode)"
+                if let temp = tempUrl, let text = try? String(contentsOf: temp, encoding: .utf8), !text.isEmpty {
+                    errMsg = text
                 }
+                DispatchQueue.main.async {
+                    self.isTransferring = false
+                    self.statusMessage = "Download failed: \(errMsg)"
+                    self.isStatusError = true
+                }
+                return
+            }
 
-                do {
-                    try FileManager.default.moveItem(at: tempUrl, to: destUrl)
-                    self.statusMessage = "✅ Downloaded to: \(destUrl.lastPathComponent)"
+            guard let tempUrl = tempUrl, FileManager.default.fileExists(atPath: tempUrl.path) else {
+                DispatchQueue.main.async {
+                    self.isTransferring = false
+                    self.statusMessage = "Download failed: Temporary file not found"
+                    self.isStatusError = true
+                }
+                return
+            }
+
+            // Target destination in ~/Downloads
+            let downloadsUrl = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+            try? FileManager.default.createDirectory(at: downloadsUrl, withIntermediateDirectories: true)
+
+            var destUrl = downloadsUrl.appendingPathComponent(filename)
+            var counter = 1
+            while FileManager.default.fileExists(atPath: destUrl.path) {
+                let ext = (filename as NSString).pathExtension
+                let base = (filename as NSString).deletingPathExtension
+                let newName = ext.isEmpty ? "\(base) (\(counter))" : "\(base) (\(counter)).\(ext)"
+                destUrl = downloadsUrl.appendingPathComponent(newName)
+                counter += 1
+            }
+
+            // CRITICAL: Must copy/move BEFORE the completion handler returns,
+            // otherwise CFNetwork deletes the temporary file immediately!
+            do {
+                try FileManager.default.copyItem(at: tempUrl, to: destUrl)
+                DispatchQueue.main.async {
+                    self.isTransferring = false
+                    self.statusMessage = "✅ Saved to Downloads/\(destUrl.lastPathComponent)"
                     self.isStatusError = false
-
-                    // Highlight in Finder
                     NSWorkspace.shared.activateFileViewerSelecting([destUrl])
-                } catch {
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.isTransferring = false
                     self.statusMessage = "Failed saving file: \(error.localizedDescription)"
                     self.isStatusError = true
                 }
