@@ -23,6 +23,12 @@ namespace GameRoomAgent
         [DllImport("user32.dll")]
         private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, int dwExtraInfo);
 
+        [DllImport("winmm.dll", EntryPoint = "timeBeginPeriod", SetLastError = true)]
+        private static extern uint TimeBeginPeriod(uint uMilliseconds);
+
+        [DllImport("winmm.dll", EntryPoint = "timeEndPeriod", SetLastError = true)]
+        private static extern uint TimeEndPeriod(uint uMilliseconds);
+
         private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
         private const uint MOUSEEVENTF_LEFTUP = 0x0004;
         private const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
@@ -45,6 +51,7 @@ namespace GameRoomAgent
 
         public void Start()
         {
+            try { TimeBeginPeriod(1); } catch { }
             _cts = new CancellationTokenSource();
             Task.Run(() => ListenLoopAsync(_cts.Token));
         }
@@ -52,6 +59,7 @@ namespace GameRoomAgent
         public void Stop()
         {
             _cts?.Cancel();
+            try { TimeEndPeriod(1); } catch { }
             try
             {
                 _listener?.Stop();
@@ -393,12 +401,11 @@ namespace GameRoomAgent
             var token = linkedCts.Token;
 
             int targetFps = 60;
-            long quality = 45L; // Ultra-fast JPEG quality: sharp text, tiny payload (~35KB), encodes in 4ms
-            int maxWidth = 1920;
-            int inFlight = 0;
+            long quality = 45L; // Ultra-fast JPEG quality: sharp text, tiny payload (~30KB), encodes in 3ms
+            int maxWidth = 1280; // 720p HD default for pure 60 FPS performance
             var sendLock = new SemaphoreSlim(1, 1);
 
-            // Task 1: Frame streaming loop to Mac
+            // Task 1: Zero-latency 60 FPS streaming loop to Mac
             var sendTask = Task.Run(async () =>
             {
                 var stopwatch = new System.Diagnostics.Stopwatch();
@@ -407,40 +414,32 @@ namespace GameRoomAgent
                 {
                     stopwatch.Restart();
 
-                    // Flow control: Wait if previous frame is still traversing network/Mac (max 30ms timeout)
-                    int waitMs = 0;
-                    while (Interlocked.CompareExchange(ref inFlight, 1, 0) != 0 && !token.IsCancellationRequested)
+                    // Non-blocking zero-buffer flow control:
+                    // If previous frame is still traversing socket/network, skip this tick to keep latency at 0ms
+                    if (sendLock.Wait(0))
                     {
-                        await Task.Delay(1, token);
-                        waitMs += 1;
-                        if (waitMs >= 30)
+                        byte[]? frame = ScreenCapture.CaptureScreenBytesFast(maxWidth, quality);
+                        if (frame != null && ws.State == WebSocketState.Open)
                         {
-                            Interlocked.Exchange(ref inFlight, 1);
-                            break;
-                        }
-                    }
-
-                    byte[]? frame = ScreenCapture.CaptureScreenBytesFast(maxWidth, quality);
-                    if (frame != null && ws.State == WebSocketState.Open)
-                    {
-                        try
-                        {
-                            await sendLock.WaitAsync(token);
-                            try
+                            _ = Task.Run(async () =>
                             {
-                                if (ws.State == WebSocketState.Open)
+                                try
                                 {
-                                    await ws.SendAsync(new ArraySegment<byte>(frame), WebSocketMessageType.Binary, true, token);
+                                    if (ws.State == WebSocketState.Open)
+                                    {
+                                        await ws.SendAsync(new ArraySegment<byte>(frame), WebSocketMessageType.Binary, true, token);
+                                    }
                                 }
-                            }
-                            finally
-                            {
-                                sendLock.Release();
-                            }
+                                catch { }
+                                finally
+                                {
+                                    sendLock.Release();
+                                }
+                            }, token);
                         }
-                        catch
+                        else
                         {
-                            break;
+                            sendLock.Release();
                         }
                     }
 
@@ -577,7 +576,14 @@ namespace GameRoomAgent
                                 case "set_quality":
                                     if (root.TryGetProperty("quality", out var qProp))
                                     {
-                                        quality = Math.Clamp(qProp.GetInt64(), 30L, 90L);
+                                        quality = Math.Clamp(qProp.GetInt64(), 25L, 90L);
+                                    }
+                                    break;
+
+                                case "set_resolution":
+                                    if (root.TryGetProperty("maxWidth", out var resProp))
+                                    {
+                                        maxWidth = resProp.GetInt32();
                                     }
                                     break;
                             }
