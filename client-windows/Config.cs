@@ -28,6 +28,14 @@ namespace GameRoomAgent
                     });
                     if (loaded != null)
                     {
+                        if (string.IsNullOrWhiteSpace(loaded.StationId) || loaded.StationId == "laptop-01")
+                        {
+                            loaded.StationId = Environment.MachineName.ToLowerInvariant();
+                        }
+                        if (string.IsNullOrWhiteSpace(loaded.StationName) || loaded.StationName == "Gaming Laptop 01")
+                        {
+                            loaded.StationName = Environment.MachineName;
+                        }
                         return loaded;
                     }
                 }
@@ -37,7 +45,11 @@ namespace GameRoomAgent
                 Console.WriteLine($"Error loading config: {ex.Message}. Using defaults.");
             }
 
-            return new Config();
+            return new Config
+            {
+                StationId = Environment.MachineName.ToLowerInvariant(),
+                StationName = Environment.MachineName
+            };
         }
     }
 }

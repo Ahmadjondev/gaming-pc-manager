@@ -25,26 +25,57 @@ namespace GameRoomAgent
 
         public static void SetAutoStart(bool enable)
         {
+            string exePath = Environment.ProcessPath ?? Application.ExecutablePath;
+
             try
             {
-                using var key = Registry.CurrentUser.OpenSubKey(RunRegistryKey, true);
-                if (key == null) return;
+                // 1. Current User Registry Run
+                using var keyCurrentUser = Registry.CurrentUser.OpenSubKey(RunRegistryKey, true);
+                if (keyCurrentUser != null)
+                {
+                    if (enable) keyCurrentUser.SetValue(AppName, $"\"{exePath}\"");
+                    else keyCurrentUser.DeleteValue(AppName, false);
+                }
 
+                // 2. Local Machine Registry Run (All users fallback)
+                try
+                {
+                    using var keyLocalMachine = Registry.LocalMachine.OpenSubKey(RunRegistryKey, true);
+                    if (keyLocalMachine != null)
+                    {
+                        if (enable) keyLocalMachine.SetValue(AppName, $"\"{exePath}\"");
+                        else keyLocalMachine.DeleteValue(AppName, false);
+                    }
+                }
+                catch { }
+
+                // 3. Windows Task Scheduler (Runs with Highest Privileges on every boot / power-on)
                 if (enable)
                 {
-                    string exePath = Environment.ProcessPath ?? Application.ExecutablePath;
-                    key.SetValue(AppName, $"\"{exePath}\"");
-                    Console.WriteLine("[Startup] Auto-start with Windows enabled in Registry.");
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "schtasks.exe",
+                        Arguments = $"/create /tn \"{AppName}\" /tr \"\\\"{exePath}\\\"\" /sc onlogon /rl highest /f",
+                        CreateNoWindow = true,
+                        UseShellExecute = false
+                    })?.WaitForExit(3000);
                 }
                 else
                 {
-                    key.DeleteValue(AppName, false);
-                    Console.WriteLine("[Startup] Auto-start with Windows disabled.");
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "schtasks.exe",
+                        Arguments = $"/delete /tn \"{AppName}\" /f",
+                        CreateNoWindow = true,
+                        UseShellExecute = false
+                    })?.WaitForExit(3000);
                 }
+
+                Console.WriteLine($"[Startup] Auto-start on laptop boot configured (Enabled: {enable}).");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Startup] Failed to configure Registry auto-start: {ex.Message}");
+                Console.WriteLine($"[Startup] Failed to configure auto-start: {ex.Message}");
             }
         }
 
