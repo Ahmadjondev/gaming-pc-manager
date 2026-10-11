@@ -94,7 +94,14 @@ public class DirectControlSession: NSObject, ObservableObject {
     }
 
     private func handleBinaryFrame(_ data: Data) {
-        if let image = NSImage(data: data) {
+        // Send ACK immediately to clear in-flight state and trigger the next frame
+        sendJson(["type": "ack"])
+
+        DispatchQueue.global(qos: .userInteractive).async {
+            guard let rep = NSBitmapImageRep(data: data) else { return }
+            let image = NSImage(size: rep.size)
+            image.addRepresentation(rep)
+
             DispatchQueue.main.async {
                 self.latestFrame = image
                 if !self.isConnected {
@@ -116,31 +123,32 @@ public class DirectControlSession: NSObject, ObservableObject {
     }
 
     private func handleTextMessage(_ text: String) {
-        // Handle optional status messages from agent
+        if let data = text.data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let type = obj["type"] as? String {
+            if type == "pong", let t = obj["t"] as? Double {
+                let ms = Int((Date().timeIntervalSince1970 - t) * 1000)
+                DispatchQueue.main.async {
+                    self.pingMs = max(1, ms)
+                    if !self.isConnected {
+                        self.isConnected = true
+                        self.connectionStatus = "Connected (LAN 60 FPS)"
+                    }
+                }
+            }
+        }
     }
 
     private func startPingTimer() {
         pingTimer?.invalidate()
-        pingTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in
+        pingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.measurePing()
         }
     }
 
     private func measurePing() {
-        guard let task = webSocketTask, !isCancelled else { return }
-        let start = Date()
-        task.sendPing { [weak self] error in
-            if error == nil {
-                let ms = Int(Date().timeIntervalSince(start) * 1000)
-                DispatchQueue.main.async {
-                    self?.pingMs = max(1, ms)
-                    if self?.isConnected == false {
-                        self?.isConnected = true
-                        self?.connectionStatus = "Connected (LAN 60 FPS)"
-                    }
-                }
-            }
-        }
+        guard !isCancelled else { return }
+        sendJson(["type": "ping", "t": Date().timeIntervalSince1970])
     }
 
     // ==================== REMOTE INPUT INJECTION ====================

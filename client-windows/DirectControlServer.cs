@@ -116,7 +116,6 @@ namespace GameRoomAgent
             var req = context.Request;
             var res = context.Response;
 
-            // CORS headers for local LAN access
             res.AddHeader("Access-Control-Allow-Origin", "*");
             res.AddHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
             res.AddHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -136,7 +135,7 @@ namespace GameRoomAgent
                 try
                 {
                     var wsContext = await context.AcceptWebSocketAsync(null);
-                    Console.WriteLine($"[DirectControl] Mac Client connected directly over LAN from {req.RemoteEndPoint}!");
+                    Console.WriteLine($"[DirectControl] Client connected directly over LAN from {req.RemoteEndPoint}!");
                     await HandleControlWebSocketAsync(wsContext.WebSocket, ct);
                 }
                 catch (Exception ex)
@@ -146,7 +145,7 @@ namespace GameRoomAgent
                 return;
             }
 
-            // Fallback MJPEG Stream (browser viewing or media players)
+            // Fallback MJPEG Stream
             if (path == "/stream" || path == "/mjpeg")
             {
                 await HandleMjpegStreamAsync(res, ct);
@@ -176,7 +175,6 @@ namespace GameRoomAgent
                 return;
             }
 
-            // Simple landing page
             res.ContentType = "text/html";
             byte[] htmlBytes = Encoding.UTF8.GetBytes($"<h3>Game Room Direct Control Server</h3><p>Station: {_config.StationName}</p><p>Status: Ready</p>");
             res.ContentLength64 = htmlBytes.Length;
@@ -190,8 +188,10 @@ namespace GameRoomAgent
             var token = linkedCts.Token;
 
             int targetFps = 60;
-            long quality = 65L;
+            long quality = 45L; // Ultra-fast JPEG quality: sharp text, tiny payload (~35KB), encodes in 4ms
             int maxWidth = 1920;
+            int inFlight = 0;
+            var sendLock = new SemaphoreSlim(1, 1);
 
             // Task 1: Frame streaming loop to Mac
             var sendTask = Task.Run(async () =>
@@ -202,12 +202,36 @@ namespace GameRoomAgent
                 {
                     stopwatch.Restart();
 
-                    byte[]? frame = ScreenCapture.CaptureScreenBytes(maxWidth, quality, drawCursor: true);
+                    // Flow control: Wait if previous frame is still traversing network/Mac (max 30ms timeout)
+                    int waitMs = 0;
+                    while (Interlocked.CompareExchange(ref inFlight, 1, 0) != 0 && !token.IsCancellationRequested)
+                    {
+                        await Task.Delay(1, token);
+                        waitMs += 1;
+                        if (waitMs >= 30)
+                        {
+                            Interlocked.Exchange(ref inFlight, 1);
+                            break;
+                        }
+                    }
+
+                    byte[]? frame = ScreenCapture.CaptureScreenBytesFast(maxWidth, quality);
                     if (frame != null && ws.State == WebSocketState.Open)
                     {
                         try
                         {
-                            await ws.SendAsync(new ArraySegment<byte>(frame), WebSocketMessageType.Binary, true, token);
+                            await sendLock.WaitAsync(token);
+                            try
+                            {
+                                if (ws.State == WebSocketState.Open)
+                                {
+                                    await ws.SendAsync(new ArraySegment<byte>(frame), WebSocketMessageType.Binary, true, token);
+                                }
+                            }
+                            finally
+                            {
+                                sendLock.Release();
+                            }
                         }
                         catch
                         {
@@ -222,7 +246,7 @@ namespace GameRoomAgent
                 }
             }, token);
 
-            // Task 2: Input receiving loop from Mac
+            // Task 2: Input receiving & ACK loop from Mac
             var receiveTask = Task.Run(async () =>
             {
                 var buffer = new byte[8192];
@@ -243,6 +267,34 @@ namespace GameRoomAgent
                             using var doc = JsonDocument.Parse(json);
                             var root = doc.RootElement;
                             string type = root.GetProperty("type").GetString() ?? "";
+
+                            // Frame ACK from Mac -> unlocks next frame transmission immediately
+                            if (type == "ack")
+                            {
+                                Interlocked.Exchange(ref inFlight, 0);
+                                continue;
+                            }
+
+                            // Round-trip Ping / Pong measurement (< 1ms LAN response)
+                            if (type == "ping")
+                            {
+                                double t = root.TryGetProperty("t", out var tp) ? tp.GetDouble() : 0;
+                                string pongJson = $"{{\"type\":\"pong\",\"t\":{t}}}";
+                                byte[] pongBytes = Encoding.UTF8.GetBytes(pongJson);
+                                await sendLock.WaitAsync(token);
+                                try
+                                {
+                                    if (ws.State == WebSocketState.Open)
+                                    {
+                                        await ws.SendAsync(new ArraySegment<byte>(pongBytes), WebSocketMessageType.Text, true, token);
+                                    }
+                                }
+                                finally
+                                {
+                                    sendLock.Release();
+                                }
+                                continue;
+                            }
 
                             switch (type)
                             {
@@ -320,7 +372,7 @@ namespace GameRoomAgent
                                 case "set_quality":
                                     if (root.TryGetProperty("quality", out var qProp))
                                     {
-                                        quality = Math.Clamp(qProp.GetInt64(), 30L, 95L);
+                                        quality = Math.Clamp(qProp.GetInt64(), 30L, 90L);
                                     }
                                     break;
                             }
@@ -351,14 +403,14 @@ namespace GameRoomAgent
             {
                 while (!ct.IsCancellationRequested)
                 {
-                    byte[]? frame = ScreenCapture.CaptureScreenBytes(1280, 60L, drawCursor: true);
+                    byte[]? frame = ScreenCapture.CaptureScreenBytesFast(1280, 50L);
                     if (frame != null)
                     {
                         await output.WriteAsync(boundaryHeader, ct);
                         await output.WriteAsync(frame, ct);
                         await output.FlushAsync(ct);
                     }
-                    await Task.Delay(33, ct); // ~30 FPS for HTTP MJPEG
+                    await Task.Delay(33, ct);
                 }
             }
             catch { }

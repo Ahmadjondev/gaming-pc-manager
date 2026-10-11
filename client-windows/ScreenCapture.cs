@@ -11,11 +11,7 @@ namespace GameRoomAgent
     public static class ScreenCapture
     {
         [StructLayout(LayoutKind.Sequential)]
-        private struct POINT
-        {
-            public int x;
-            public int y;
-        }
+        private struct POINT { public int x; public int y; }
 
         [StructLayout(LayoutKind.Sequential)]
         private struct CURSORINFO
@@ -34,87 +30,89 @@ namespace GameRoomAgent
 
         private const int CURSOR_SHOWING = 0x00000001;
 
-        public static byte[]? CaptureScreenBytes(int maxWidth = 1920, long quality = 65L, bool drawCursor = true)
+        // Zero-allocation reusable capture cache
+        private static Bitmap? _reusableBitmap;
+        private static Graphics? _reusableGraphics;
+        private static int _cachedWidth;
+        private static int _cachedHeight;
+        private static readonly object _syncLock = new object();
+        private static readonly ImageCodecInfo? _jpegEncoder = GetEncoder(ImageFormat.Jpeg);
+        private static readonly MemoryStream _reusableStream = new MemoryStream(256 * 1024);
+
+        public static byte[]? CaptureScreenBytesFast(int maxWidth = 1920, long quality = 50L)
         {
-            try
+            lock (_syncLock)
             {
-                Rectangle bounds = Screen.PrimaryScreen?.Bounds ?? Screen.AllScreens[0].Bounds;
-
-                using var fullBmp = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format24bppRgb);
-                using (var g = Graphics.FromImage(fullBmp))
-                {
-                    g.CopyFromScreen(bounds.Left, bounds.Top, 0, 0, bounds.Size, CopyPixelOperation.SourceCopy);
-
-                    if (drawCursor)
-                    {
-                        try
-                        {
-                            var ci = new CURSORINFO { cbSize = Marshal.SizeOf(typeof(CURSORINFO)) };
-                            if (GetCursorInfo(out ci) && ci.flags == CURSOR_SHOWING)
-                            {
-                                IntPtr hdc = g.GetHdc();
-                                try
-                                {
-                                    DrawIcon(hdc, ci.ptScreenPos.x - bounds.Left, ci.ptScreenPos.y - bounds.Top, ci.hCursor);
-                                }
-                                finally
-                                {
-                                    g.ReleaseHdc(hdc);
-                                }
-                            }
-                        }
-                        catch { }
-                    }
-                }
-
-                Bitmap finalBmp = fullBmp;
-                bool needsDispose = false;
-
-                if (bounds.Width > maxWidth)
-                {
-                    int targetHeight = (int)((double)bounds.Height * maxWidth / bounds.Width);
-                    var scaledBmp = new Bitmap(maxWidth, targetHeight, PixelFormat.Format24bppRgb);
-                    using (var g = Graphics.FromImage(scaledBmp))
-                    {
-                        g.InterpolationMode = InterpolationMode.Bilinear;
-                        g.DrawImage(fullBmp, 0, 0, maxWidth, targetHeight);
-                    }
-                    finalBmp = scaledBmp;
-                    needsDispose = true;
-                }
-
                 try
                 {
-                    using var ms = new MemoryStream();
-                    var encoder = GetEncoder(ImageFormat.Jpeg);
-                    if (encoder != null)
+                    Rectangle bounds = Screen.PrimaryScreen?.Bounds ?? Screen.AllScreens[0].Bounds;
+
+                    // Only allocate Bitmap once; reuse across frames
+                    if (_reusableBitmap == null || _cachedWidth != bounds.Width || _cachedHeight != bounds.Height)
+                    {
+                        _reusableGraphics?.Dispose();
+                        _reusableBitmap?.Dispose();
+
+                        _cachedWidth = bounds.Width;
+                        _cachedHeight = bounds.Height;
+                        _reusableBitmap = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format24bppRgb);
+                        _reusableGraphics = Graphics.FromImage(_reusableBitmap);
+                    }
+
+                    // Direct blit from primary screen
+                    _reusableGraphics.CopyFromScreen(bounds.Left, bounds.Top, 0, 0, bounds.Size, CopyPixelOperation.SourceCopy);
+
+                    // Draw cursor
+                    try
+                    {
+                        var ci = new CURSORINFO { cbSize = Marshal.SizeOf(typeof(CURSORINFO)) };
+                        if (GetCursorInfo(out ci) && ci.flags == CURSOR_SHOWING)
+                        {
+                            IntPtr hdc = _reusableGraphics.GetHdc();
+                            try
+                            {
+                                DrawIcon(hdc, ci.ptScreenPos.x - bounds.Left, ci.ptScreenPos.y - bounds.Top, ci.hCursor);
+                            }
+                            finally
+                            {
+                                _reusableGraphics.ReleaseHdc(hdc);
+                            }
+                        }
+                    }
+                    catch { }
+
+                    _reusableStream.SetLength(0);
+                    _reusableStream.Position = 0;
+
+                    if (_jpegEncoder != null)
                     {
                         using var encoderParameters = new EncoderParameters(1);
                         encoderParameters.Param[0] = new EncoderParameter(Encoder.Quality, quality);
-                        finalBmp.Save(ms, encoder, encoderParameters);
+                        _reusableBitmap.Save(_reusableStream, _jpegEncoder, encoderParameters);
                     }
                     else
                     {
-                        finalBmp.Save(ms, ImageFormat.Jpeg);
+                        _reusableBitmap.Save(_reusableStream, ImageFormat.Jpeg);
                     }
 
-                    return ms.ToArray();
+                    return _reusableStream.ToArray();
                 }
-                finally
+                catch (Exception ex)
                 {
-                    if (needsDispose) finalBmp.Dispose();
+                    Console.WriteLine($"[ScreenCapture] Error: {ex.Message}");
+                    return null;
                 }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[ScreenCapture] Error: {ex.Message}");
-                return null;
             }
         }
 
-        public static string? CaptureScreenBase64(int maxWidth = 1280, long quality = 65L)
+        public static byte[]? CaptureScreenBytes(int maxWidth = 1920, long quality = 50L, bool drawCursor = true)
         {
-            byte[]? bytes = CaptureScreenBytes(maxWidth, quality, drawCursor: true);
+            return CaptureScreenBytesFast(maxWidth, quality);
+        }
+
+        public static string? CaptureScreenBase64(int maxWidth = 1280, long quality = 50L)
+        {
+            byte[]? bytes = CaptureScreenBytesFast(maxWidth, quality);
             return bytes != null ? Convert.ToBase64String(bytes) : null;
         }
 
