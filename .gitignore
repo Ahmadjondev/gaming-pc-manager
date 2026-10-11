@@ -11,3 +11,8 @@ dist/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Archives & Downloaded binaries
+*.zip
+downloaded-agent/
+downloaded-agent-latest/

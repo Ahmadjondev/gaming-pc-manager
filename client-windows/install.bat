@@ -16,7 +16,7 @@ echo ================================================================
 echo.
 
 set TARGET_DIR=C:\GameRoomAgent
-set DEFAULT_URL=ws://192.168.31.177:3000/ws/client
+set DEFAULT_URL=wss://gaming-pc-manager.onrender.com/ws/client
 
 echo [*] Target Directory: %TARGET_DIR%
 if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
@@ -29,11 +29,6 @@ if not exist "%TARGET_DIR%\config.json" (
     echo.
     echo [*] Configuring Server Connection...
     set SERVER_URL=%1
-    if "!SERVER_URL!"=="" (
-        echo Please enter your Server WebSocket URL
-        echo (e.g. wss://your-domain.trycloudflare.com/ws/client or press ENTER for default):
-        set /p SERVER_URL="> "
-    )
     if "!SERVER_URL!"=="" (
         set SERVER_URL=%DEFAULT_URL%
     )

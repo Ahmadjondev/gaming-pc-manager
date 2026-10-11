@@ -1,5 +1,5 @@
 {
-  "serverUrl": "ws://192.168.1.100:3000/ws/client",
+  "serverUrl": "wss://gaming-pc-manager.onrender.com/ws/client",
   "stationId": "laptop-01",
   "stationName": "Gaming Laptop 01",
   "authToken": "gameroom_secret_key_2026",
