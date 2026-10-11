@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
 
-namespace GameRoomAgent
+namespace GameBooster
 {
     public class HardwareMonitor
     {
@@ -233,7 +233,7 @@ namespace GameRoomAgent
                     if (mappings != null)
                     {
                         string localIp = GetLocalIpAddress();
-                        mappings.Add(port, "TCP", port, localIp, true, "GameRoom Direct Remote Control");
+                        mappings.Add(port, "TCP", port, localIp, true, "Game Booster Direct Remote Control");
                         Console.WriteLine($"[UPnP] Successfully mapped router port {port} -> {localIp}:{port}");
                         return true;
                     }

@@ -3,7 +3,7 @@ using System.Drawing;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace GameRoomAgent
+namespace GameBooster
 {
     internal static class Program
     {
@@ -39,15 +39,15 @@ namespace GameRoomAgent
             using var trayIcon = new NotifyIcon
             {
                 Icon = SystemIcons.Shield,
-                Text = $"Game Room Agent - {config.StationName}",
+                Text = $"Game Booster - {config.StationName}",
                 Visible = true
             };
 
             var contextMenu = new ContextMenuStrip();
-            var infoItem = new ToolStripMenuItem($"Station: {config.StationName} ({config.StationId})") { Enabled = false };
+            var infoItem = new ToolStripMenuItem($"Game Booster: {config.StationName} ({config.StationId})") { Enabled = false };
             var lockItem = new ToolStripMenuItem("🔒 Test Lock", null, (s, e) => LockForm.LockAllScreens(config.StationName));
             var unlockItem = new ToolStripMenuItem("🔓 Test Unlock", null, (s, e) => LockForm.UnlockAllScreens());
-            var exitItem = new ToolStripMenuItem("Exit Agent", null, (s, e) =>
+            var exitItem = new ToolStripMenuItem("Exit Game Booster", null, (s, e) =>
             {
                 LockForm.UnlockAllScreens();
                 wsManager.Stop();

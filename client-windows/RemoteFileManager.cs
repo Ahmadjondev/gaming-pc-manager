@@ -6,7 +6,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 
-namespace GameRoomAgent
+namespace GameBooster
 {
     public static class RemoteFileManager
     {

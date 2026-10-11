@@ -60,7 +60,7 @@ public class DirectControlSession: NSObject, ObservableObject {
                 } else if !isLanTarget {
                     self.errorMessage = "⚠️ Could not reach Internet / Public IP: \(self.host):\(self.port)\n\nWhen connecting over the Internet (WAN):\n• Ensure Port \(self.port) is forwarded on your home router to the laptop's LAN IP.\n• Or use Tailscale P2P for instant direct connection without router settings.\n• Or switch to 'Cloud Preview' which relays through the cloud server."
                 } else {
-                    self.errorMessage = "Could not reach \(self.host):\(self.port) within 3.5 seconds.\nMake sure GameRoomAgent is running on the laptop and port \(self.port) is open on your firewall."
+                    self.errorMessage = "Could not reach \(self.host):\(self.port) within 3.5 seconds.\nMake sure Game Booster is running on the laptop and port \(self.port) is open on your firewall."
                 }
             }
         }

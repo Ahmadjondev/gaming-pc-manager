@@ -7,7 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace GameRoomAgent
+namespace GameBooster
 {
     public class WebSocketManager
     {
@@ -49,13 +49,13 @@ namespace GameRoomAgent
                 {
                     _webSocket = new ClientWebSocket();
                     _webSocket.Options.KeepAliveInterval = TimeSpan.FromSeconds(15);
-                    Console.WriteLine($"[Agent] Connecting to {_config.ServerUrl}...");
+                    Console.WriteLine($"[GameBooster] Connecting to {_config.ServerUrl}...");
 
                     using var connectCts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
                     using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, connectCts.Token);
 
                     await _webSocket.ConnectAsync(new Uri(_config.ServerUrl), linkedCts.Token);
-                    Console.WriteLine("[Agent] Connected to Mac Server!");
+                    Console.WriteLine("[GameBooster] Connected to Mac Server!");
 
                     // Send registration
                     await SendRegistrationAsync(ct);
@@ -68,7 +68,7 @@ namespace GameRoomAgent
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[Agent] Connection error: {ex.Message}");
+                    Console.WriteLine($"[GameBooster] Connection error: {ex.Message}");
                     if (_config.AutoLockOnDisconnect)
                     {
                         _syncContext.Post(_ => LockForm.LockAllScreens(_config.StationName, "Lost connection to Admin Server"), null);
@@ -82,7 +82,7 @@ namespace GameRoomAgent
 
                 if (!ct.IsCancellationRequested)
                 {
-                    Console.WriteLine("[Agent] Reconnecting in 4 seconds...");
+                    Console.WriteLine("[GameBooster] Reconnecting in 4 seconds...");
                     await Task.Delay(4000, ct);
                 }
             }
@@ -135,7 +135,7 @@ namespace GameRoomAgent
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[Agent] Telemetry error: {ex.Message}");
+                    Console.WriteLine($"[GameBooster] Telemetry error: {ex.Message}");
                     break;
                 }
 
@@ -153,7 +153,7 @@ namespace GameRoomAgent
                     var result = await _webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), ct);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        Console.WriteLine("[Agent] Server closed WebSocket.");
+                        Console.WriteLine("[GameBooster] Server closed WebSocket.");
                         break;
                     }
 
@@ -162,7 +162,7 @@ namespace GameRoomAgent
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[Agent] Receive error: {ex.Message}");
+                    Console.WriteLine($"[GameBooster] Receive error: {ex.Message}");
                     break;
                 }
             }
@@ -177,7 +177,7 @@ namespace GameRoomAgent
                 if (!root.TryGetProperty("action", out var actionProp)) return;
 
                 string action = actionProp.GetString() ?? string.Empty;
-                Console.WriteLine($"[Agent] Received action: {action}");
+                Console.WriteLine($"[GameBooster] Received action: {action}");
 
                 switch (action.ToLowerInvariant())
                 {
@@ -321,7 +321,7 @@ namespace GameRoomAgent
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Agent] Failed to handle command: {ex.Message}");
+                Console.WriteLine($"[GameBooster] Failed to handle command: {ex.Message}");
             }
         }
 
@@ -340,7 +340,7 @@ namespace GameRoomAgent
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Agent] Send error: {ex.Message}");
+                Console.WriteLine($"[GameBooster] Send error: {ex.Message}");
             }
             finally
             {

@@ -6,8 +6,11 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>GameRoomAgent</RootNamespace>
-    <AssemblyName>GameRoomAgent</AssemblyName>
+    <RootNamespace>GameBooster</RootNamespace>
+    <AssemblyName>GameBooster</AssemblyName>
+    <Product>Game Booster</Product>
+    <Company>Game Room Hub</Company>
+    <Description>Game Booster - Ultra Low Latency Direct Remote Control</Description>
     
     <!-- Single file self-contained executable for Windows x64 -->
     <PublishSingleFile>true</PublishSingleFile>

@@ -42,43 +42,31 @@ A lightweight, real-time gaming PC/laptop management and screen-locking system d
 
 ---
 
-### Step 2: Compile the Windows Agent via GitHub Actions
+### Step 2: Compile Windows Game Booster via GitHub Actions
 
 You don't need any Windows machine or .NET SDK on your Mac to compile the C# client:
 
 1. Commit and push this project to your GitHub repository:
    ```bash
    git add .
-   git commit -m "Add game room management system and Windows agent"
+   git commit -m "Update Game Booster"
    git push origin main
    ```
 2. Open your repository on **GitHub.com** and go to the **Actions** tab.
-3. You will see the **Build Windows Gaming Agent** workflow running.
-4. Once completed (approx. 1-2 minutes), click on the run and download the **`GameRoomAgent-Windows-x64`** artifact.
+3. You will see the **Build Windows Game Booster** workflow running.
+4. Once completed (approx. 1-2 minutes), click on the run and download the **`GameBooster-Windows-x64`** (or `GameBooster-Windows-Setup.zip` from Releases).
 5. Extract the `.zip` on your Windows laptop. It contains:
-   * `GameRoomAgent.exe` (Single-file self-contained executable, no runtimes required)
+   * `GameBooster.exe` (Single-file self-contained executable, no runtimes required)
    * `config.json`
+   * `install.bat` (Automated 1-click installer & auto-start setup)
 
 ---
 
 ### Step 3: Run on the Windows Laptop
 
-1. On the Windows laptop, open `config.json` in Notepad:
-   ```json
-   {
-     "serverUrl": "ws://<YOUR-MAC-IP>:3000/ws/client",
-     "stationId": "laptop-01",
-     "stationName": "Gaming Laptop 01",
-     "telemetryIntervalSeconds": 3,
-     "autoLockOnDisconnect": false
-   }
-   ```
-   *(Replace `<YOUR-MAC-IP>` with the IP printed by the server on your Mac, e.g. `192.168.31.177`)*.
-
-2. Double-click **`GameRoomAgent.exe`**:
-   * It starts silently in the system tray with a shield icon.
-   * Immediately connects to your Mac server over Wi-Fi/LAN.
-   * Telemetry (CPU %, RAM %, Battery %, Active Game) will appear live on your Mac dashboard!
+1. Right-click `install.bat` and select **Run as Administrator** (or double-click `GameBooster.exe` directly).
+2. It sets up `C:\GameBooster\GameBooster.exe`, configures firewall rules, and starts automatically in the system tray.
+3. Telemetry (CPU %, RAM %, Battery %, Active Game) will appear live on your Mac dashboard!
 
 ---
 

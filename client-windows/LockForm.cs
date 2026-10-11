@@ -5,7 +5,7 @@ using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace GameRoomAgent
+namespace GameBooster
 {
     public class LockForm : Form
     {

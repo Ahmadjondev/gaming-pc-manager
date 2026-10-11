@@ -3,12 +3,13 @@ using System.IO;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
-namespace GameRoomAgent
+namespace GameBooster
 {
     public static class StartupManager
     {
         private const string RunRegistryKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-        private const string AppName = "GameRoomAgent";
+        private const string AppName = "GameBooster";
+        private const string LegacyAppName = "GameRoomAgent";
 
         public static bool IsAutoStartEnabled()
         {
@@ -33,6 +34,7 @@ namespace GameRoomAgent
                 using var keyCurrentUser = Registry.CurrentUser.OpenSubKey(RunRegistryKey, true);
                 if (keyCurrentUser != null)
                 {
+                    keyCurrentUser.DeleteValue(LegacyAppName, false);
                     if (enable) keyCurrentUser.SetValue(AppName, $"\"{exePath}\"");
                     else keyCurrentUser.DeleteValue(AppName, false);
                 }
@@ -43,9 +45,23 @@ namespace GameRoomAgent
                     using var keyLocalMachine = Registry.LocalMachine.OpenSubKey(RunRegistryKey, true);
                     if (keyLocalMachine != null)
                     {
+                        keyLocalMachine.DeleteValue(LegacyAppName, false);
                         if (enable) keyLocalMachine.SetValue(AppName, $"\"{exePath}\"");
                         else keyLocalMachine.DeleteValue(AppName, false);
                     }
+                }
+                catch { }
+
+                // Clean legacy scheduled task
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "schtasks.exe",
+                        Arguments = $"/delete /tn \"{LegacyAppName}\" /f",
+                        CreateNoWindow = true,
+                        UseShellExecute = false
+                    })?.WaitForExit(2000);
                 }
                 catch { }
 
@@ -71,7 +87,7 @@ namespace GameRoomAgent
                     })?.WaitForExit(3000);
                 }
 
-                Console.WriteLine($"[Startup] Auto-start on laptop boot configured (Enabled: {enable}).");
+                Console.WriteLine($"[Startup] Auto-start for Game Booster configured (Enabled: {enable}).");
             }
             catch (Exception ex)
             {
