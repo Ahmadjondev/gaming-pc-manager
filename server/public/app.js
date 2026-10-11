@@ -90,6 +90,15 @@ function handleServerMessage(msg) {
       break;
 
     case 'station_connected':
+      if (msg.station) {
+        stations.set(msg.station.id, msg.station);
+        renderStations();
+        if (window.electronMac) {
+          window.electronMac.sendNotification('Laptop Online 💻', `${msg.station.name || msg.station.id} connected`);
+        }
+      }
+      break;
+
     case 'station_update':
       if (msg.station) {
         stations.set(msg.station.id, msg.station);
@@ -144,6 +153,10 @@ function updateSummaryStats() {
   statInSession.textContent = inSession;
   statLocked.textContent = locked;
   stationCountTag.textContent = `${total} ${total === 1 ? 'Device' : 'Devices'}`;
+
+  if (window.electronMac) {
+    window.electronMac.setBadge(online);
+  }
 }
 
 function formatSeconds(totalSec) {
