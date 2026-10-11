@@ -261,6 +261,7 @@ function handleClientConnection(ws, req) {
           hostname: msg.hostname || 'Unknown-PC',
           os: msg.os || 'Windows',
           ip: msg.ip || remoteIp,
+          controlPort: msg.controlPort || existing.controlPort || 48999,
           status: 'online',
           isLocked: existing.isLocked !== undefined ? existing.isLocked : false,
           sessionSeconds: existing.sessionSeconds || 0,

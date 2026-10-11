@@ -5,5 +5,7 @@
   "authToken": "gameroom_secret_key_2026",
   "autoStartWithWindows": true,
   "telemetryIntervalSeconds": 3,
-  "autoLockOnDisconnect": false
+  "autoLockOnDisconnect": false,
+  "controlPort": 48999,
+  "enableDirectControl": true
 }

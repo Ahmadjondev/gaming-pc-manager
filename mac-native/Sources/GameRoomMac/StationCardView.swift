@@ -4,6 +4,7 @@ public struct StationCardView: View {
     public let station: Station
     @ObservedObject public var service: WebSocketService
 
+    @State private var showingDirectControl = false
     @State private var showingAlertSheet = false
     @State private var showingScreenSheet = false
     @State private var showingFilesSheet = false
@@ -23,9 +24,16 @@ public struct StationCardView: View {
                             .font(.system(size: 16, weight: .bold))
                             .foregroundColor(.white)
                     }
-                    Text("\(station.hostname ?? "Windows PC") • \(station.ip ?? "LAN")")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.gray)
+                    HStack(spacing: 6) {
+                        Text(station.hostname ?? "Windows PC")
+                        Text("•")
+                        Text(station.ip ?? "LAN")
+                            .foregroundColor(.cyan)
+                        Text(":\(station.controlPort ?? 48999)")
+                            .foregroundColor(.gray)
+                    }
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.gray)
                 }
 
                 Spacer()
@@ -160,11 +168,31 @@ public struct StationCardView: View {
                     .buttonStyle(ActionButtonStyle(color: .cyan))
                 }
 
+                // ⚡ HIGH-PERFORMANCE DIRECT CONTROL (60 FPS LAN)
+                Button {
+                    showingDirectControl = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 12))
+                        Text("⚡ Direct Control (60 FPS LAN)")
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 7)
+                    .background(station.isOnline ? LinearGradient(colors: [Color.indigo, Color.purple], startPoint: .leading, endPoint: .trailing) : LinearGradient(colors: [Color.gray.opacity(0.3), Color.gray.opacity(0.3)], startPoint: .leading, endPoint: .trailing))
+                    .foregroundColor(station.isOnline ? .white : .gray)
+                    .cornerRadius(8)
+                    .shadow(color: station.isOnline ? Color.purple.opacity(0.3) : Color.clear, radius: 4, y: 2)
+                }
+                .buttonStyle(.plain)
+                .disabled(!station.isOnline)
+
                 HStack(spacing: 8) {
                     Button {
                         showingScreenSheet = true
                     } label: {
-                        Label("View Screen", systemImage: "display")
+                        Label("Cloud Preview", systemImage: "display")
                     }
                     .buttonStyle(ActionButtonStyle(color: .purple))
 
@@ -198,6 +226,9 @@ public struct StationCardView: View {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(borderColor, lineWidth: 1.5)
         )
+        .sheet(isPresented: $showingDirectControl) {
+            DirectRemoteControlView(station: station)
+        }
         .sheet(isPresented: $showingScreenSheet) {
             ScreenPreviewSheet(station: station, service: service)
         }

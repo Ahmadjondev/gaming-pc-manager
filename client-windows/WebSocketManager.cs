@@ -96,7 +96,8 @@ namespace GameRoomAgent
                 authToken = _config.AuthToken,
                 hostname = Environment.MachineName,
                 os = Environment.OSVersion.ToString(),
-                ip = HardwareMonitor.GetLocalIpAddress()
+                ip = HardwareMonitor.GetLocalIpAddress(),
+                controlPort = _config.ControlPort
             };
 
             await SendJsonAsync(reg, ct);

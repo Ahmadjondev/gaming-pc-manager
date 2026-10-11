@@ -27,6 +27,13 @@ namespace GameRoomAgent
             var wsManager = new WebSocketManager(config, hardware, syncContext);
             wsManager.Start();
 
+            DirectControlServer? directServer = null;
+            if (config.EnableDirectControl)
+            {
+                directServer = new DirectControlServer(config);
+                directServer.Start();
+            }
+
             // Run with system tray context
             using var trayIcon = new NotifyIcon
             {
@@ -43,6 +50,7 @@ namespace GameRoomAgent
             {
                 LockForm.UnlockAllScreens();
                 wsManager.Stop();
+                directServer?.Stop();
                 Application.Exit();
             });
 
@@ -54,6 +62,7 @@ namespace GameRoomAgent
                 trayIcon.Visible = false;
                 LockForm.UnlockAllScreens();
                 wsManager.Stop();
+                directServer?.Stop();
             };
 
             Application.Run();

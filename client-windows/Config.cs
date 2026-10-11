@@ -13,6 +13,8 @@ namespace GameRoomAgent
         public bool AutoStartWithWindows { get; set; } = true;
         public int TelemetryIntervalSeconds { get; set; } = 3;
         public bool AutoLockOnDisconnect { get; set; } = false;
+        public int ControlPort { get; set; } = 48999;
+        public bool EnableDirectControl { get; set; } = true;
 
         public static Config Load()
         {

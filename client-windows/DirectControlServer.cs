@@ -1,0 +1,371 @@
+using System;
+using System.Drawing;
+using System.IO;
+using System.Net;
+using System.Net.WebSockets;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace GameRoomAgent
+{
+    public class DirectControlServer
+    {
+        [DllImport("user32.dll")]
+        private static extern bool SetCursorPos(int X, int Y);
+
+        [DllImport("user32.dll")]
+        private static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, int dwExtraInfo);
+
+        [DllImport("user32.dll")]
+        private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, int dwExtraInfo);
+
+        private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+        private const uint MOUSEEVENTF_LEFTUP = 0x0004;
+        private const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
+        private const uint MOUSEEVENTF_RIGHTUP = 0x0010;
+        private const uint MOUSEEVENTF_MIDDLEDOWN = 0x0020;
+        private const uint MOUSEEVENTF_MIDDLEUP = 0x0040;
+        private const uint MOUSEEVENTF_WHEEL = 0x0800;
+
+        private const uint KEYEVENTF_KEYUP = 0x0002;
+        private const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
+
+        private readonly Config _config;
+        private HttpListener? _listener;
+        private CancellationTokenSource? _cts;
+
+        public DirectControlServer(Config config)
+        {
+            _config = config;
+        }
+
+        public void Start()
+        {
+            _cts = new CancellationTokenSource();
+            Task.Run(() => ListenLoopAsync(_cts.Token));
+        }
+
+        public void Stop()
+        {
+            _cts?.Cancel();
+            try
+            {
+                _listener?.Stop();
+                _listener?.Close();
+            }
+            catch { }
+        }
+
+        private async Task ListenLoopAsync(CancellationToken ct)
+        {
+            int port = _config.ControlPort > 0 ? _config.ControlPort : 48999;
+            string prefix = $"http://*:{port}/";
+
+            try
+            {
+                _listener = new HttpListener();
+                _listener.Prefixes.Add(prefix);
+                _listener.Start();
+                Console.WriteLine($"[DirectControl] Server listening on port {port} (LAN Direct P2P)");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[DirectControl] Warning: Failed to bind http://*:{port}/ ({ex.Message}). Trying http://+:{port}/...");
+                try
+                {
+                    _listener = new HttpListener();
+                    _listener.Prefixes.Add($"http://+:{port}/");
+                    _listener.Start();
+                    Console.WriteLine($"[DirectControl] Server listening on http://+:{port}/");
+                }
+                catch (Exception ex2)
+                {
+                    Console.WriteLine($"[DirectControl] Error starting Direct Control Server: {ex2.Message}");
+                    return;
+                }
+            }
+
+            while (!ct.IsCancellationRequested && _listener != null && _listener.IsListening)
+            {
+                try
+                {
+                    var context = await _listener.GetContextAsync();
+                    _ = ProcessRequestAsync(context, ct);
+                }
+                catch (HttpListenerException) when (ct.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    if (!ct.IsCancellationRequested)
+                    {
+                        Console.WriteLine($"[DirectControl] Accept error: {ex.Message}");
+                        await Task.Delay(500, ct);
+                    }
+                }
+            }
+        }
+
+        private async Task ProcessRequestAsync(HttpListenerContext context, CancellationToken ct)
+        {
+            var req = context.Request;
+            var res = context.Response;
+
+            // CORS headers for local LAN access
+            res.AddHeader("Access-Control-Allow-Origin", "*");
+            res.AddHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+            res.AddHeader("Access-Control-Allow-Headers", "Content-Type");
+
+            if (req.HttpMethod == "OPTIONS")
+            {
+                res.StatusCode = 204;
+                res.Close();
+                return;
+            }
+
+            string path = req.Url?.AbsolutePath.ToLowerInvariant() ?? "/";
+
+            // WebSocket Upgrade for Direct 60 FPS Stream + Input
+            if (context.Request.IsWebSocketRequest && (path == "/control" || path == "/ws"))
+            {
+                try
+                {
+                    var wsContext = await context.AcceptWebSocketAsync(null);
+                    Console.WriteLine($"[DirectControl] Mac Client connected directly over LAN from {req.RemoteEndPoint}!");
+                    await HandleControlWebSocketAsync(wsContext.WebSocket, ct);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[DirectControl] WebSocket error: {ex.Message}");
+                }
+                return;
+            }
+
+            // Fallback MJPEG Stream (browser viewing or media players)
+            if (path == "/stream" || path == "/mjpeg")
+            {
+                await HandleMjpegStreamAsync(res, ct);
+                return;
+            }
+
+            // Status endpoint
+            if (path == "/status" || path == "/health")
+            {
+                var bounds = Screen.PrimaryScreen?.Bounds ?? Screen.AllScreens[0].Bounds;
+                var statusObj = new
+                {
+                    status = "ok",
+                    stationId = _config.StationId,
+                    stationName = _config.StationName,
+                    screenWidth = bounds.Width,
+                    screenHeight = bounds.Height,
+                    fpsSupported = 60,
+                    port = _config.ControlPort
+                };
+
+                byte[] data = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(statusObj));
+                res.ContentType = "application/json";
+                res.ContentLength64 = data.Length;
+                await res.OutputStream.WriteAsync(data, ct);
+                res.Close();
+                return;
+            }
+
+            // Simple landing page
+            res.ContentType = "text/html";
+            byte[] htmlBytes = Encoding.UTF8.GetBytes($"<h3>Game Room Direct Control Server</h3><p>Station: {_config.StationName}</p><p>Status: Ready</p>");
+            res.ContentLength64 = htmlBytes.Length;
+            await res.OutputStream.WriteAsync(htmlBytes, ct);
+            res.Close();
+        }
+
+        private async Task HandleControlWebSocketAsync(WebSocket ws, CancellationToken ct)
+        {
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var token = linkedCts.Token;
+
+            int targetFps = 60;
+            long quality = 65L;
+            int maxWidth = 1920;
+
+            // Task 1: Frame streaming loop to Mac
+            var sendTask = Task.Run(async () =>
+            {
+                var stopwatch = new System.Diagnostics.Stopwatch();
+
+                while (!token.IsCancellationRequested && ws.State == WebSocketState.Open)
+                {
+                    stopwatch.Restart();
+
+                    byte[]? frame = ScreenCapture.CaptureScreenBytes(maxWidth, quality, drawCursor: true);
+                    if (frame != null && ws.State == WebSocketState.Open)
+                    {
+                        try
+                        {
+                            await ws.SendAsync(new ArraySegment<byte>(frame), WebSocketMessageType.Binary, true, token);
+                        }
+                        catch
+                        {
+                            break;
+                        }
+                    }
+
+                    stopwatch.Stop();
+                    int targetInterval = 1000 / Math.Clamp(targetFps, 15, 60);
+                    int delay = Math.Max(1, targetInterval - (int)stopwatch.ElapsedMilliseconds);
+                    await Task.Delay(delay, token);
+                }
+            }, token);
+
+            // Task 2: Input receiving loop from Mac
+            var receiveTask = Task.Run(async () =>
+            {
+                var buffer = new byte[8192];
+                while (!token.IsCancellationRequested && ws.State == WebSocketState.Open)
+                {
+                    try
+                    {
+                        var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), token);
+                        if (result.MessageType == WebSocketMessageType.Close)
+                        {
+                            await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", token);
+                            break;
+                        }
+
+                        if (result.MessageType == WebSocketMessageType.Text)
+                        {
+                            string json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                            using var doc = JsonDocument.Parse(json);
+                            var root = doc.RootElement;
+                            string type = root.GetProperty("type").GetString() ?? "";
+
+                            switch (type)
+                            {
+                                case "mouse_move":
+                                    if (root.TryGetProperty("x", out var xProp) && root.TryGetProperty("y", out var yProp))
+                                    {
+                                        double rx = xProp.GetDouble();
+                                        double ry = yProp.GetDouble();
+                                        var bounds = Screen.PrimaryScreen?.Bounds ?? Screen.AllScreens[0].Bounds;
+                                        int tx = bounds.Left + (int)Math.Round(rx * bounds.Width);
+                                        int ty = bounds.Top + (int)Math.Round(ry * bounds.Height);
+                                        SetCursorPos(tx, ty);
+                                    }
+                                    break;
+
+                                case "mouse_down":
+                                    string downBtn = root.GetProperty("button").GetString() ?? "left";
+                                    if (downBtn == "left") mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
+                                    else if (downBtn == "right") mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0);
+                                    else if (downBtn == "middle") mouse_event(MOUSEEVENTF_MIDDLEDOWN, 0, 0, 0, 0);
+                                    break;
+
+                                case "mouse_up":
+                                    string upBtn = root.GetProperty("button").GetString() ?? "left";
+                                    if (upBtn == "left") mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+                                    else if (upBtn == "right") mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0);
+                                    else if (upBtn == "middle") mouse_event(MOUSEEVENTF_MIDDLEUP, 0, 0, 0, 0);
+                                    break;
+
+                                case "mouse_wheel":
+                                    if (root.TryGetProperty("delta", out var deltaProp))
+                                    {
+                                        int delta = deltaProp.GetInt32();
+                                        mouse_event(MOUSEEVENTF_WHEEL, 0, 0, (uint)delta, 0);
+                                    }
+                                    break;
+
+                                case "key_down":
+                                    if (root.TryGetProperty("vk", out var vkDown))
+                                    {
+                                        keybd_event((byte)vkDown.GetInt32(), 0, 0, 0);
+                                    }
+                                    break;
+
+                                case "key_up":
+                                    if (root.TryGetProperty("vk", out var vkUp))
+                                    {
+                                        keybd_event((byte)vkUp.GetInt32(), 0, KEYEVENTF_KEYUP, 0);
+                                    }
+                                    break;
+
+                                case "special_key":
+                                    string special = root.GetProperty("key").GetString() ?? "";
+                                    if (special == "win")
+                                    {
+                                        keybd_event(0x5B, 0, 0, 0);
+                                        keybd_event(0x5B, 0, KEYEVENTF_KEYUP, 0);
+                                    }
+                                    else if (special == "desktop")
+                                    {
+                                        keybd_event(0x5B, 0, 0, 0);
+                                        keybd_event(0x44, 0, 0, 0);
+                                        keybd_event(0x44, 0, KEYEVENTF_KEYUP, 0);
+                                        keybd_event(0x5B, 0, KEYEVENTF_KEYUP, 0);
+                                    }
+                                    break;
+
+                                case "set_fps":
+                                    if (root.TryGetProperty("fps", out var fpsProp))
+                                    {
+                                        targetFps = Math.Clamp(fpsProp.GetInt32(), 15, 60);
+                                    }
+                                    break;
+
+                                case "set_quality":
+                                    if (root.TryGetProperty("quality", out var qProp))
+                                    {
+                                        quality = Math.Clamp(qProp.GetInt64(), 30L, 95L);
+                                    }
+                                    break;
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        break;
+                    }
+                }
+            }, token);
+
+            await Task.WhenAny(sendTask, receiveTask);
+            linkedCts.Cancel();
+            try { ws.Dispose(); } catch { }
+            Console.WriteLine("[DirectControl] Client disconnected from Direct LAN stream.");
+        }
+
+        private async Task HandleMjpegStreamAsync(HttpListenerResponse res, CancellationToken ct)
+        {
+            res.ContentType = "multipart/x-mixed-replace; boundary=--frame";
+            res.SendChunked = true;
+
+            using var output = res.OutputStream;
+            byte[] boundaryHeader = Encoding.ASCII.GetBytes("\r\n--frame\r\nContent-Type: image/jpeg\r\n\r\n");
+
+            try
+            {
+                while (!ct.IsCancellationRequested)
+                {
+                    byte[]? frame = ScreenCapture.CaptureScreenBytes(1280, 60L, drawCursor: true);
+                    if (frame != null)
+                    {
+                        await output.WriteAsync(boundaryHeader, ct);
+                        await output.WriteAsync(frame, ct);
+                        await output.FlushAsync(ct);
+                    }
+                    await Task.Delay(33, ct); // ~30 FPS for HTTP MJPEG
+                }
+            }
+            catch { }
+            finally
+            {
+                try { res.Close(); } catch { }
+            }
+        }
+    }
+}

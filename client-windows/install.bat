@@ -42,7 +42,9 @@ if not exist "%TARGET_DIR%\config.json" (
         echo   "authToken": "gameroom_secret_key_2026",
         echo   "autoStartWithWindows": true,
         echo   "telemetryIntervalSeconds": 3,
-        echo   "autoLockOnDisconnect": false
+        echo   "autoLockOnDisconnect": false,
+        echo   "controlPort": 48999,
+        echo   "enableDirectControl": true
         echo }
     ) > "%TARGET_DIR%\config.json"
     echo [+] Config created with Station: %COMPUTERNAME% and Server: !SERVER_URL!
@@ -64,8 +66,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
 reg add "HKLM\Software\Microsoft\Windows\CurrentVersion\Run" /v "GameRoomAgent" /t REG_SZ /d "\"%TARGET_DIR%\GameRoomAgent.exe\"" /f >nul 2>&1
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "GameRoomAgent" /t REG_SZ /d "\"%TARGET_DIR%\GameRoomAgent.exe\"" /f >nul 2>&1
 
-:: 3. Windows Firewall Rule (Allow Outbound WebSocket Traffic)
+:: 3. Windows Firewall Rules (Outbound + Direct High-FPS Inbound LAN Control Port 48999)
 netsh advfirewall firewall add rule name="GameRoomAgent" dir=out action=allow program="%TARGET_DIR%\GameRoomAgent.exe" enable=yes >nul 2>&1
+netsh advfirewall firewall add rule name="GameRoomAgent-DirectControl" dir=in action=allow protocol=TCP localport=48999 enable=yes >nul 2>&1
+netsh http add urlacl url=http://*:48999/ user=Everyone >nul 2>&1 || netsh http add urlacl url=http://*:48999/ user=Users >nul 2>&1
 
 echo.
 echo ================================================================

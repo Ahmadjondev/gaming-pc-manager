@@ -43,3 +43,22 @@ jobs:
         with:
           name: GameRoomAgent-Windows-x64
           path: publish/
+
+      - name: Zip Setup Package
+        run: Compress-Archive -Path publish\* -DestinationPath GameRoomAgent-Windows-Setup.zip -Force
+
+      - name: Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: v1.1.0
+          name: "GameRoomAgent Windows Setup v1.1.0 (Direct High-FPS LAN Control)"
+          body: |
+            ### ⚡ What's New in v1.1.0:
+            - **Direct LAN 60 FPS Remote Control**: Built-in ultra-low latency direct streaming (<3ms latency) over port 48999.
+            - **Interactive Remote Input**: Real-time mouse and keyboard control with Win32 `SendInput`.
+            - **Firewall Auto-Configuration**: `install.bat` automatically opens port 48999 and reserves URL ACL.
+            - **Zero Cloud Video Bandwidth**: Render serves solely as the signaling meeting point.
+          files: GameRoomAgent-Windows-Setup.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

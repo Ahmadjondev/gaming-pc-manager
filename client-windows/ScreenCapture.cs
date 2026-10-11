@@ -3,13 +3,38 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace GameRoomAgent
 {
     public static class ScreenCapture
     {
-        public static string? CaptureScreenBase64(int maxWidth = 1280, long quality = 65L)
+        [StructLayout(LayoutKind.Sequential)]
+        private struct POINT
+        {
+            public int x;
+            public int y;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct CURSORINFO
+        {
+            public int cbSize;
+            public int flags;
+            public IntPtr hCursor;
+            public POINT ptScreenPos;
+        }
+
+        [DllImport("user32.dll")]
+        private static extern bool GetCursorInfo(out CURSORINFO pci);
+
+        [DllImport("user32.dll")]
+        private static extern bool DrawIcon(IntPtr hDC, int X, int Y, IntPtr hIcon);
+
+        private const int CURSOR_SHOWING = 0x00000001;
+
+        public static byte[]? CaptureScreenBytes(int maxWidth = 1920, long quality = 65L, bool drawCursor = true)
         {
             try
             {
@@ -19,9 +44,29 @@ namespace GameRoomAgent
                 using (var g = Graphics.FromImage(fullBmp))
                 {
                     g.CopyFromScreen(bounds.Left, bounds.Top, 0, 0, bounds.Size, CopyPixelOperation.SourceCopy);
+
+                    if (drawCursor)
+                    {
+                        try
+                        {
+                            var ci = new CURSORINFO { cbSize = Marshal.SizeOf(typeof(CURSORINFO)) };
+                            if (GetCursorInfo(out ci) && ci.flags == CURSOR_SHOWING)
+                            {
+                                IntPtr hdc = g.GetHdc();
+                                try
+                                {
+                                    DrawIcon(hdc, ci.ptScreenPos.x - bounds.Left, ci.ptScreenPos.y - bounds.Top, ci.hCursor);
+                                }
+                                finally
+                                {
+                                    g.ReleaseHdc(hdc);
+                                }
+                            }
+                        }
+                        catch { }
+                    }
                 }
 
-                // Scale down if larger than maxWidth
                 Bitmap finalBmp = fullBmp;
                 bool needsDispose = false;
 
@@ -53,8 +98,7 @@ namespace GameRoomAgent
                         finalBmp.Save(ms, ImageFormat.Jpeg);
                     }
 
-                    byte[] bytes = ms.ToArray();
-                    return Convert.ToBase64String(bytes);
+                    return ms.ToArray();
                 }
                 finally
                 {
@@ -63,9 +107,15 @@ namespace GameRoomAgent
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ScreenCapture] Error capturing screen: {ex.Message}");
+                Console.WriteLine($"[ScreenCapture] Error: {ex.Message}");
                 return null;
             }
+        }
+
+        public static string? CaptureScreenBase64(int maxWidth = 1280, long quality = 65L)
+        {
+            byte[]? bytes = CaptureScreenBytes(maxWidth, quality, drawCursor: true);
+            return bytes != null ? Convert.ToBase64String(bytes) : null;
         }
 
         private static ImageCodecInfo? GetEncoder(ImageFormat format)

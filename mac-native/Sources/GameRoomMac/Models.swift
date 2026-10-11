@@ -7,6 +7,7 @@ public struct Station: Identifiable, Codable, Hashable {
     public var hostname: String?
     public var os: String?
     public var ip: String?
+    public var controlPort: Int?
     public var status: String? // "online" / "offline"
     public var isLocked: Bool?
     public var sessionSeconds: Int?
