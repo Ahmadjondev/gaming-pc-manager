@@ -5,11 +5,10 @@ public struct MainView: View {
     @StateObject private var service = WebSocketService()
     @State private var currentTime = Date()
 
-    // Direct Connect by IP State
-    @State private var showingDirectConnectSheet = false
-    @State private var directConnectIp: String = "192.168.1."
-    @State private var directConnectPort: String = "48999"
-    @State private var directConnectStation: Station? = nil
+    // Quick Direct Control Bar State
+    @State private var quickIp: String = "192.168.1.105"
+    @State private var quickPort: String = "48999"
+    @State private var activeDirectControlStation: Station? = nil
 
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -21,43 +20,23 @@ public struct MainView: View {
                     ZStack {
                         RoundedRectangle(cornerRadius: 8)
                             .fill(LinearGradient(colors: [Color.cyan.opacity(0.3), Color.purple.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 36, height: 36)
+                            .frame(width: 38, height: 38)
                         Image(systemName: "gamecontroller.fill")
                             .foregroundColor(.cyan)
-                            .font(.system(size: 18))
+                            .font(.system(size: 19))
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text("GAME ROOM HUB")
-                            .font(.system(size: 15, weight: .black))
+                            .font(.system(size: 16, weight: .black))
                             .foregroundColor(.white)
                         Text("Native macOS Fleet Controller")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: 11, weight: .medium))
                             .foregroundColor(.gray)
                     }
                 }
 
                 Spacer()
-
-                // Direct Connect by IP Button
-                Button {
-                    showingDirectConnectSheet = true
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 11))
-                        Text("⚡ Direct Connect (IP)")
-                            .font(.system(size: 11, weight: .bold))
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(LinearGradient(colors: [Color.indigo, Color.purple], startPoint: .leading, endPoint: .trailing))
-                    .foregroundColor(.white)
-                    .cornerRadius(8)
-                    .shadow(color: Color.purple.opacity(0.3), radius: 4, y: 2)
-                }
-                .buttonStyle(.plain)
-                .help("Connect directly to any gaming laptop IP on your LAN")
 
                 // Server Status Indicator
                 HStack(spacing: 6) {
@@ -91,7 +70,7 @@ public struct MainView: View {
                 .buttonStyle(.borderless)
                 .help("Reconnect / Refresh Server")
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 22)
             .padding(.vertical, 12)
             .background(Color(nsColor: NSColor(red: 0.05, green: 0.07, blue: 0.11, alpha: 1.0)))
 
@@ -104,111 +83,165 @@ public struct MainView: View {
                 StatCard(title: "IN SESSION", value: "\(inSessionCount)", color: .cyan)
                 StatCard(title: "LOCKED", value: "\(lockedCount)", color: .red)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 14)
+            .padding(.horizontal, 22)
+            .padding(.vertical, 12)
 
             Divider()
 
-            // ==================== MAIN CONTENT (GRID OF STATIONS) ====================
+            // ==================== MAIN CONTENT SCROLLVIEW ====================
             ScrollView {
-                if service.stations.isEmpty {
-                    VStack(spacing: 18) {
-                        Image(systemName: "laptopcomputer.trianglebadge.exclamationmark")
-                            .font(.system(size: 52))
-                            .foregroundColor(.indigo)
+                VStack(spacing: 20) {
+                    // ⚡ PROMINENT DIRECT LAN 60 FPS CONTROL PANEL (ALWAYS VISIBLE)
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "bolt.fill")
+                                        .font(.system(size: 16))
+                                        .foregroundColor(.yellow)
+                                    Text("⚡ DIRECT LAN REMOTE CONTROL (60 FPS)")
+                                        .font(.system(size: 15, weight: .black))
+                                        .foregroundColor(.white)
+                                    Text("NO CLOUD LAG")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.green.opacity(0.2))
+                                        .foregroundColor(.green)
+                                        .cornerRadius(4)
+                                }
+                                Text("Connect directly to any gaming laptop on your local Wi-Fi / Ethernet (< 3ms latency, 60 FPS, real-time mouse & keyboard)")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.gray)
+                            }
+                            Spacer()
+                        }
 
-                        Text("Waiting for Gaming Laptops to Connect...")
-                            .font(.system(size: 19, weight: .bold))
-                            .foregroundColor(.white)
-
-                        Text("Run install.bat on any Windows gaming laptop.\nIt will auto-register here with its local LAN IP address!")
-                            .multilineTextAlignment(.center)
-                            .font(.system(size: 13))
-                            .foregroundColor(.gray)
-
+                        // Inline Quick Connect Inputs
                         HStack(spacing: 12) {
+                            HStack(spacing: 8) {
+                                Text("Laptop IP:")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.gray)
+                                TextField("192.168.1.105", text: $quickIp)
+                                    .textFieldStyle(.roundedBorder)
+                                    .font(.system(size: 13, design: .monospaced))
+                                    .frame(width: 170)
+                            }
+
+                            HStack(spacing: 8) {
+                                Text("Port:")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.gray)
+                                TextField("48999", text: $quickPort)
+                                    .textFieldStyle(.roundedBorder)
+                                    .font(.system(size: 13, design: .monospaced))
+                                    .frame(width: 80)
+                            }
+
+                            // ⚡ LAUNCH BUTTON
                             Button {
-                                showingDirectConnectSheet = true
+                                launchDirectControl(ip: quickIp, port: quickPort)
                             } label: {
                                 HStack(spacing: 6) {
                                     Image(systemName: "bolt.fill")
-                                    Text("⚡ Connect Directly by IP")
-                                        .font(.system(size: 12, weight: .bold))
+                                    Text("⚡ Start Direct Control (60 FPS)")
+                                        .font(.system(size: 13, weight: .black))
                                 }
                                 .padding(.horizontal, 16)
-                                .padding(.vertical, 9)
+                                .padding(.vertical, 8)
                                 .background(LinearGradient(colors: [Color.indigo, Color.purple], startPoint: .leading, endPoint: .trailing))
                                 .foregroundColor(.white)
                                 .cornerRadius(8)
+                                .shadow(color: Color.purple.opacity(0.4), radius: 6, y: 2)
                             }
                             .buttonStyle(.plain)
+                            .disabled(quickIp.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                            Spacer()
 
                             Button {
                                 addDemoStation()
                             } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "plus.circle.fill")
-                                    Text("Add Demo PC Card")
+                                HStack(spacing: 5) {
+                                    Image(systemName: "plus.circle")
+                                    Text("Show Demo PC")
                                         .font(.system(size: 12, weight: .semibold))
                                 }
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 9)
-                                .background(Color.white.opacity(0.1))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .background(Color.white.opacity(0.08))
                                 .foregroundColor(.white)
                                 .cornerRadius(8)
                             }
                             .buttonStyle(.plain)
                         }
-                        .padding(.top, 6)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 350)
-                    .padding(40)
-                } else {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 380, maximum: 500), spacing: 18)], spacing: 18) {
-                        ForEach(Array(service.stations.values).sorted(by: { $0.displayName < $1.displayName })) { station in
-                            StationCardView(station: station, service: service)
+                    .padding(18)
+                    .background(
+                        LinearGradient(
+                            colors: [
+                                Color(nsColor: NSColor(red: 0.10, green: 0.12, blue: 0.22, alpha: 1.0)),
+                                Color(nsColor: NSColor(red: 0.08, green: 0.09, blue: 0.16, alpha: 1.0))
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(LinearGradient(colors: [Color.purple.opacity(0.6), Color.indigo.opacity(0.3)], startPoint: .leading, endPoint: .trailing), lineWidth: 1.5)
+                    )
+
+                    // SECTION: GAMING STATIONS
+                    HStack {
+                        Text("CONNECTED GAMING PCS")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.gray)
+                        Spacer()
+                        Text("\(service.stations.count) Available")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.cyan)
+                    }
+                    .padding(.top, 4)
+
+                    if service.stations.isEmpty {
+                        VStack(spacing: 14) {
+                            Image(systemName: "laptopcomputer.and.arrow.down")
+                                .font(.system(size: 40))
+                                .foregroundColor(.gray.opacity(0.6))
+
+                            Text("No Windows Laptops Registered Yet")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.white)
+
+                            Text("When you run install.bat on any gaming laptop, it connects to Render and automatically shows its LAN card here with the ⚡ Direct Control (60 FPS LAN) button.\nOr click 'Show Demo PC' above to preview the laptop card right now.")
+                                .multilineTextAlignment(.center)
+                                .font(.system(size: 12))
+                                .foregroundColor(.gray)
+                                .frame(maxWidth: 550)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 180)
+                        .padding(20)
+                        .background(Color.white.opacity(0.02))
+                        .cornerRadius(10)
+                    } else {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 380, maximum: 520), spacing: 18)], spacing: 18) {
+                            ForEach(Array(service.stations.values).sorted(by: { $0.displayName < $1.displayName })) { station in
+                                StationCardView(station: station, service: service)
+                            }
                         }
                     }
-                    .padding(20)
                 }
+                .padding(22)
             }
             .background(Color(nsColor: NSColor(red: 0.04, green: 0.05, blue: 0.08, alpha: 1.0)))
         }
         .onReceive(timer) { input in
             currentTime = input
         }
-        .sheet(isPresented: $showingDirectConnectSheet) {
-            DirectConnectSheet(
-                ip: $directConnectIp,
-                port: $directConnectPort,
-                onConnect: { enteredIp, enteredPort in
-                    showingDirectConnectSheet = false
-                    let customStation = Station(
-                        id: "manual-\(enteredIp)",
-                        name: "Gaming PC (\(enteredIp))",
-                        hostname: "Gaming-Laptop",
-                        os: "Windows 11",
-                        ip: enteredIp,
-                        controlPort: Int(enteredPort) ?? 48999,
-                        status: "online",
-                        isLocked: false,
-                        sessionSeconds: 3600,
-                        sessionTotalSeconds: 3600,
-                        cpu: 25,
-                        ram: 45,
-                        ramTotalGb: 16.0,
-                        ramUsedGb: 7.2,
-                        battery: 100,
-                        isCharging: true,
-                        batteryStatus: "AC Power",
-                        activeWindow: "Desktop",
-                        lastSeen: Date().timeIntervalSince1970
-                    )
-                    directConnectStation = customStation
-                }
-            )
-        }
-        .sheet(item: $directConnectStation) { st in
+        .sheet(item: $activeDirectControlStation) { st in
             DirectRemoteControlView(station: st)
         }
     }
@@ -223,6 +256,33 @@ public struct MainView: View {
 
     private var lockedCount: Int {
         service.stations.values.filter { $0.isOnline && ($0.isLocked ?? false) }.count
+    }
+
+    private func launchDirectControl(ip: String, port: String) {
+        let cleanIp = ip.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanPort = Int(port.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 48999
+        let manualStation = Station(
+            id: "manual-\(cleanIp)",
+            name: "Gaming Laptop (\(cleanIp))",
+            hostname: "Gaming-Laptop",
+            os: "Windows 11",
+            ip: cleanIp,
+            controlPort: cleanPort,
+            status: "online",
+            isLocked: false,
+            sessionSeconds: 3600,
+            sessionTotalSeconds: 3600,
+            cpu: 30,
+            ram: 50,
+            ramTotalGb: 16.0,
+            ramUsedGb: 8.0,
+            battery: 100,
+            isCharging: true,
+            batteryStatus: "AC Power",
+            activeWindow: "Desktop",
+            lastSeen: Date().timeIntervalSince1970
+        )
+        activeDirectControlStation = manualStation
     }
 
     private func addDemoStation() {
@@ -248,87 +308,7 @@ public struct MainView: View {
             lastSeen: Date().timeIntervalSince1970
         )
         service.stations[demo.id] = demo
-    }
-}
-
-// ==================== DIRECT CONNECT SHEET ====================
-
-struct DirectConnectSheet: View {
-    @Binding var ip: String
-    @Binding var port: String
-    let onConnect: (String, String) -> Void
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(spacing: 20) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("⚡ Direct LAN Remote Control")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                    Text("Connect directly to any gaming laptop's IP address on your Wi-Fi/LAN")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                }
-                Spacer()
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.gray)
-                }
-                .buttonStyle(.plain)
-            }
-
-            VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("LAPTOP LOCAL IP ADDRESS")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.gray)
-                    TextField("e.g. 192.168.1.105", text: $ip)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 14, design: .monospaced))
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("CONTROL PORT")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.gray)
-                    TextField("48999", text: $port)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 14, design: .monospaced))
-                }
-            }
-
-            HStack {
-                Button("Cancel") {
-                    dismiss()
-                }
-                .buttonStyle(.bordered)
-
-                Spacer()
-
-                Button {
-                    onConnect(ip.trimmingCharacters(in: .whitespacesAndNewlines), port.trimmingCharacters(in: .whitespacesAndNewlines))
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "bolt.fill")
-                        Text("Connect 60 FPS")
-                            .font(.system(size: 13, weight: .bold))
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(LinearGradient(colors: [Color.indigo, Color.purple], startPoint: .leading, endPoint: .trailing))
-                    .foregroundColor(.white)
-                    .cornerRadius(8)
-                }
-                .buttonStyle(.plain)
-                .disabled(ip.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding(24)
-        .frame(width: 440)
-        .background(Color(nsColor: .windowBackgroundColor))
+        quickIp = demo.ip ?? "192.168.1.105"
     }
 }
 
