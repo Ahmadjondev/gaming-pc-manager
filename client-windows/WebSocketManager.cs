@@ -16,6 +16,7 @@ namespace GameRoomAgent
         private ClientWebSocket? _webSocket;
         private CancellationTokenSource? _cts;
         private readonly SynchronizationContext _syncContext;
+        private readonly SemaphoreSlim _sendLock = new SemaphoreSlim(1, 1);
 
         public WebSocketManager(Config config, HardwareMonitor hardwareMonitor, SynchronizationContext syncContext)
         {
@@ -47,6 +48,7 @@ namespace GameRoomAgent
                 try
                 {
                     _webSocket = new ClientWebSocket();
+                    _webSocket.Options.KeepAliveInterval = TimeSpan.FromSeconds(15);
                     Console.WriteLine($"[Agent] Connecting to {_config.ServerUrl}...");
 
                     using var connectCts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
@@ -144,15 +146,23 @@ namespace GameRoomAgent
             var buffer = new byte[8192];
             while (!ct.IsCancellationRequested && _webSocket?.State == WebSocketState.Open)
             {
-                var result = await _webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), ct);
-                if (result.MessageType == WebSocketMessageType.Close)
+                try
                 {
-                    Console.WriteLine("[Agent] Server closed WebSocket.");
+                    var result = await _webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), ct);
+                    if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        Console.WriteLine("[Agent] Server closed WebSocket.");
+                        break;
+                    }
+
+                    string json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    HandleServerCommand(json);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Agent] Receive error: {ex.Message}");
                     break;
                 }
-
-                string json = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                HandleServerCommand(json);
             }
         }
 
@@ -317,9 +327,23 @@ namespace GameRoomAgent
         {
             if (_webSocket?.State != WebSocketState.Open) return;
 
-            string json = JsonSerializer.Serialize(data);
-            byte[] bytes = Encoding.UTF8.GetBytes(json);
-            await _webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, ct);
+            try
+            {
+                await _sendLock.WaitAsync(ct);
+                if (_webSocket?.State != WebSocketState.Open) return;
+
+                string json = JsonSerializer.Serialize(data);
+                byte[] bytes = Encoding.UTF8.GetBytes(json);
+                await _webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, ct);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Agent] Send error: {ex.Message}");
+            }
+            finally
+            {
+                try { _sendLock.Release(); } catch { }
+            }
         }
     }
 }

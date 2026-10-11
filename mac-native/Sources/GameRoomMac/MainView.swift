@@ -241,6 +241,14 @@ public struct MainView: View {
         .onReceive(timer) { input in
             currentTime = input
         }
+        .onChange(of: service.stations) { stations in
+            if let first = stations.values.first(where: { !($0.ip ?? "").isEmpty }), let ip = first.ip {
+                quickIp = ip
+                if let port = first.controlPort {
+                    quickPort = "\(port)"
+                }
+            }
+        }
         .sheet(item: $activeDirectControlStation) { st in
             DirectRemoteControlView(station: st)
         }

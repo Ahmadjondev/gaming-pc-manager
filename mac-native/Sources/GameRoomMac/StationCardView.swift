@@ -180,13 +180,12 @@ public struct StationCardView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 7)
-                    .background(station.isOnline ? LinearGradient(colors: [Color.indigo, Color.purple], startPoint: .leading, endPoint: .trailing) : LinearGradient(colors: [Color.gray.opacity(0.3), Color.gray.opacity(0.3)], startPoint: .leading, endPoint: .trailing))
-                    .foregroundColor(station.isOnline ? .white : .gray)
+                    .background(LinearGradient(colors: [Color.indigo, Color.purple], startPoint: .leading, endPoint: .trailing))
+                    .foregroundColor(.white)
                     .cornerRadius(8)
-                    .shadow(color: station.isOnline ? Color.purple.opacity(0.3) : Color.clear, radius: 4, y: 2)
+                    .shadow(color: Color.purple.opacity(0.3), radius: 4, y: 2)
                 }
                 .buttonStyle(.plain)
-                .disabled(!station.isOnline)
 
                 HStack(spacing: 8) {
                     Button {

@@ -3,7 +3,9 @@ set -e
 
 APP_NAME="Game Room Manager"
 APP_DIR="${APP_NAME}.app"
-BINARY="mac-native/.build/out/Products/Release/GameRoomMac"
+BINARY="$(cd mac-native && swift build -c release --show-bin-path)/GameRoomMac"
+
+echo "==> Using Binary: ${BINARY}"
 
 echo "==> Creating macOS App Bundle..."
 rm -rf "${APP_DIR}"
