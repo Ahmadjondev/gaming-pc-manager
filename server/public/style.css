@@ -477,6 +477,21 @@ body {
   transform: scale(0.98);
 }
 
+.btn-direct-control {
+  grid-column: 1 / -1;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  font-weight: 700;
+  padding: 10px 14px;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.35);
+  border: none;
+}
+
+.btn-direct-control:hover {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  transform: translateY(-1px);
+}
+
 .btn-lock {
   background: rgba(239, 68, 68, 0.2);
   color: var(--color-ruby);

@@ -54,7 +54,11 @@
     <main class="main-content">
       <div class="section-header">
         <h2>Gaming Stations</h2>
-        <span class="count-tag" id="stationCountTag">0 Devices</span>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button class="btn btn-direct-control btn-sm" onclick="openDirectConnectModal()">⚡ Direct Connect (IP)</button>
+          <button class="btn btn-secondary btn-sm" onclick="addDemoStation()">💻 Demo PC</button>
+          <span class="count-tag" id="stationCountTag">0 Devices</span>
+        </div>
       </div>
 
       <div class="stations-grid" id="stationsGrid">
@@ -62,10 +66,10 @@
         <div class="empty-state" id="emptyState">
           <div class="empty-icon">💻</div>
           <h3>Waiting for Laptop to Connect...</h3>
-          <p>Run the <strong>GameRoomAgent.exe</strong> on your Windows laptop.<br>Ensure it points to this Mac's IP address on your local network.</p>
-          <div class="lan-info-box">
-            <span>Agent WebSocket URL:</span>
-            <code id="wsHintUrl">ws://&lt;mac-ip&gt;:3000/ws/client</code>
+          <p>Run <strong>install.bat</strong> on your Windows gaming laptop.<br>It will automatically register here with its local LAN IP address!</p>
+          <div style="display: flex; gap: 10px; justify-content: center; margin-top: 15px;">
+            <button class="btn btn-direct-control" onclick="openDirectConnectModal()">⚡ Connect Directly by IP</button>
+            <button class="btn btn-secondary" onclick="addDemoStation()">💻 Show Demo PC Card</button>
           </div>
         </div>
       </div>
@@ -186,6 +190,55 @@
             <span class="download-status-label" id="downloadStatusLabel">Downloading...</span>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DIRECT HIGH-FPS LAN CONTROL MODAL -->
+  <div class="modal-backdrop" id="directControlModal">
+    <div class="modal-card modal-large" style="max-width: 1200px; width: 95vw;">
+      <div class="modal-header">
+        <div class="direct-ctrl-header-info" style="display: flex; align-items: center; gap: 10px;">
+          <h3 id="directControlModalTitle">⚡ Direct LAN Remote Control (60 FPS)</h3>
+          <span class="badge badge-unlocked" id="directIpBadge" style="font-family: monospace;">192.168.1.105:48999</span>
+          <span class="badge badge-online" id="directFpsBadge">60 FPS</span>
+          <span class="badge badge-unlocked" id="directPingBadge">2 ms</span>
+        </div>
+        <div class="header-actions">
+          <button class="btn btn-secondary btn-sm" id="btnDirectToggleInput" onclick="toggleDirectInput()">🎮 Control: ON</button>
+          <button class="btn btn-secondary btn-sm" onclick="sendDirectSpecialKey('win')">⊞ Win</button>
+          <button class="btn btn-secondary btn-sm" onclick="sendDirectSpecialKey('desktop')">🖥️ Desktop</button>
+          <button class="btn btn-secondary btn-sm" onclick="openDirectMoonlight()">🚀 Moonlight</button>
+          <button class="btn btn-secondary btn-sm" onclick="openDirectRDP()">🖥️ RDP</button>
+          <button class="modal-close" onclick="closeDirectControlModal()">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body screen-body" style="padding: 0; background: #000; overflow: hidden; display: flex; justify-content: center; align-items: center; position: relative; min-height: 500px;">
+        <canvas id="directCanvas" tabindex="0" style="max-width: 100%; max-height: 75vh; outline: none; cursor: crosshair; display: block;"></canvas>
+        <div class="direct-connecting-overlay" id="directConnectingOverlay" style="position: absolute; text-align: center; color: white;">
+          <div class="spinner" style="margin: 0 auto 12px; width: 36px; height: 36px; border: 3px solid rgba(255,255,255,0.2); border-top-color: #6366f1; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+          <p id="directConnectingText">Connecting directly to laptop over LAN (Port 48999)...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DIRECT CONNECT BY IP MODAL -->
+  <div class="modal-backdrop" id="directConnectModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>⚡ Direct LAN Connect by IP</h3>
+        <button class="modal-close" onclick="closeDirectConnectModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <label for="manualIpInput">Gaming Laptop LAN IP Address</label>
+        <input type="text" id="manualIpInput" placeholder="e.g. 192.168.1.105" value="192.168.1." />
+        <label for="manualPortInput" style="margin-top: 10px;">Control Port</label>
+        <input type="text" id="manualPortInput" value="48999" />
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeDirectConnectModal()">Cancel</button>
+        <button class="btn btn-direct-control" onclick="submitManualDirectConnect()">Connect 60 FPS</button>
       </div>
     </div>
   </div>

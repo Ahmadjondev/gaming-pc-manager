@@ -279,6 +279,9 @@ function renderStations() {
 
       <!-- ACTION CONTROLS -->
       <div class="action-toolbar">
+        <button class="btn btn-direct-control" onclick="openDirectControlModal('${st.id}')">
+          ⚡ Direct Control (60 FPS LAN)
+        </button>
         ${isLocked ? `
           <button class="btn btn-unlock" onclick="unlockStation('${st.id}')">
             🔓 Unlock
@@ -630,5 +633,249 @@ function handleDownloadStatus(msg) {
   }
 }
 
+// ==================== DIRECT LAN 60 FPS REMOTE CONTROL ====================
+let directControlWs = null;
+let directStation = null;
+let directInputEnabled = true;
+let directFpsCount = 0;
+let directFpsTimer = null;
+let directLastFpsTime = Date.now();
+let directPingTimer = null;
+
+function openDirectControlModal(stationId) {
+  const st = stations.get(stationId);
+  if (!st) return;
+  startDirectSession(st);
+}
+
+function startDirectSession(st) {
+  directStation = st;
+  const ip = st.ip || '127.0.0.1';
+  const port = st.controlPort || 48999;
+
+  document.getElementById('directControlModalTitle').textContent = `⚡ Direct LAN Control — ${st.name || st.id}`;
+  document.getElementById('directIpBadge').textContent = `${ip}:${port}`;
+  document.getElementById('directFpsBadge').textContent = '0 FPS';
+  document.getElementById('directPingBadge').textContent = '... ms';
+  document.getElementById('directConnectingOverlay').style.display = 'block';
+  document.getElementById('directConnectingText').textContent = `Connecting directly to ${ip}:${port} over local network...`;
+
+  document.getElementById('directControlModal').classList.add('open');
+
+  const canvas = document.getElementById('directCanvas');
+  const ctx = canvas.getContext('2d');
+  canvas.focus();
+
+  if (directControlWs) {
+    directControlWs.close();
+  }
+
+  const wsUrl = `ws://${ip}:${port}/control`;
+  console.log('[Direct LAN] Connecting to', wsUrl);
+
+  try {
+    directControlWs = new WebSocket(wsUrl);
+    directControlWs.binaryType = 'blob';
+
+    let lastPingSend = Date.now();
+
+    directControlWs.onopen = () => {
+      console.log('[Direct LAN] Connected to gaming laptop directly!');
+      document.getElementById('directConnectingOverlay').style.display = 'none';
+
+      // Send initial settings
+      directControlWs.send(JSON.stringify({ type: 'set_fps', fps: 60 }));
+      directControlWs.send(JSON.stringify({ type: 'set_quality', quality: 65 }));
+
+      // Ping measurement
+      clearInterval(directPingTimer);
+      directPingTimer = setInterval(() => {
+        if (directControlWs && directControlWs.readyState === WebSocket.OPEN) {
+          lastPingSend = Date.now();
+          directControlWs.send(JSON.stringify({ type: 'ping' }));
+        }
+      }, 2000);
+    };
+
+    directControlWs.onmessage = (event) => {
+      if (typeof event.data === 'string') {
+        const pingMs = Math.max(1, Date.now() - lastPingSend);
+        document.getElementById('directPingBadge').textContent = `${pingMs} ms`;
+        return;
+      }
+
+      // Binary JPEG frame
+      const blob = event.data;
+      const img = new Image();
+      const url = URL.createObjectURL(blob);
+      img.onload = () => {
+        if (canvas.width !== img.width || canvas.height !== img.height) {
+          canvas.width = img.width;
+          canvas.height = img.height;
+        }
+        ctx.drawImage(img, 0, 0);
+        URL.revokeObjectURL(url);
+
+        // FPS measurement
+        directFpsCount++;
+        const now = Date.now();
+        if (now - directLastFpsTime >= 1000) {
+          const fps = Math.round((directFpsCount * 1000) / (now - directLastFpsTime));
+          document.getElementById('directFpsBadge').textContent = `${fps} FPS`;
+          directFpsCount = 0;
+          directLastFpsTime = now;
+        }
+      };
+      img.src = url;
+    };
+
+    directControlWs.onerror = () => {
+      document.getElementById('directConnectingText').textContent = `Could not connect to ${ip}:${port}. Ensure laptop is running agent and on same Wi-Fi.`;
+    };
+
+    directControlWs.onclose = () => {
+      clearInterval(directPingTimer);
+      console.log('[Direct LAN] Disconnected');
+    };
+  } catch (err) {
+    document.getElementById('directConnectingText').textContent = `Connection error: ${err.message}`;
+  }
+
+  setupDirectInputListeners(canvas);
+}
+
+function setupDirectInputListeners(canvas) {
+  // Remove existing listeners to avoid duplicates
+  canvas.onmousemove = (e) => {
+    if (!directInputEnabled || !directControlWs || directControlWs.readyState !== WebSocket.OPEN) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.min(Math.max(0, (e.clientX - rect.left) / rect.width), 1);
+    const y = Math.min(Math.max(0, (e.clientY - rect.top) / rect.height), 1);
+    directControlWs.send(JSON.stringify({ type: 'mouse_move', x, y }));
+  };
+
+  canvas.onmousedown = (e) => {
+    if (!directInputEnabled || !directControlWs || directControlWs.readyState !== WebSocket.OPEN) return;
+    canvas.focus();
+    const btn = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left';
+    directControlWs.send(JSON.stringify({ type: 'mouse_down', button: btn }));
+  };
+
+  canvas.onmouseup = (e) => {
+    if (!directInputEnabled || !directControlWs || directControlWs.readyState !== WebSocket.OPEN) return;
+    const btn = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left';
+    directControlWs.send(JSON.stringify({ type: 'mouse_up', button: btn }));
+  };
+
+  canvas.oncontextmenu = (e) => {
+    e.preventDefault();
+  };
+
+  canvas.onwheel = (e) => {
+    if (!directInputEnabled || !directControlWs || directControlWs.readyState !== WebSocket.OPEN) return;
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 120 : -120;
+    directControlWs.send(JSON.stringify({ type: 'mouse_wheel', delta }));
+  };
+
+  canvas.onkeydown = (e) => {
+    if (!directInputEnabled || !directControlWs || directControlWs.readyState !== WebSocket.OPEN) return;
+    e.preventDefault();
+    directControlWs.send(JSON.stringify({ type: 'key_down', vk: e.keyCode }));
+  };
+
+  canvas.onkeyup = (e) => {
+    if (!directInputEnabled || !directControlWs || directControlWs.readyState !== WebSocket.OPEN) return;
+    e.preventDefault();
+    directControlWs.send(JSON.stringify({ type: 'key_up', vk: e.keyCode }));
+  };
+}
+
+function toggleDirectInput() {
+  directInputEnabled = !directInputEnabled;
+  const btn = document.getElementById('btnDirectToggleInput');
+  btn.textContent = directInputEnabled ? '🎮 Control: ON' : '👁️ View Only';
+  btn.style.background = directInputEnabled ? '#6366f1' : 'rgba(255,255,255,0.1)';
+}
+
+function sendDirectSpecialKey(key) {
+  if (directControlWs && directControlWs.readyState === WebSocket.OPEN) {
+    directControlWs.send(JSON.stringify({ type: 'special_key', key }));
+  }
+}
+
+function openDirectMoonlight() {
+  if (directStation && directStation.ip) {
+    window.location.href = `moonlight://${directStation.ip}`;
+  }
+}
+
+function openDirectRDP() {
+  if (directStation && directStation.ip) {
+    window.location.href = `rdp://${directStation.ip}`;
+  }
+}
+
+function closeDirectControlModal() {
+  document.getElementById('directControlModal').classList.remove('open');
+  if (directControlWs) {
+    directControlWs.close();
+    directControlWs = null;
+  }
+  clearInterval(directPingTimer);
+}
+
+// ==================== MANUAL DIRECT CONNECT MODAL ====================
+function openDirectConnectModal() {
+  document.getElementById('directConnectModal').classList.add('open');
+  document.getElementById('manualIpInput').focus();
+}
+
+function closeDirectConnectModal() {
+  document.getElementById('directConnectModal').classList.remove('open');
+}
+
+function submitManualDirectConnect() {
+  const ip = document.getElementById('manualIpInput').value.trim();
+  const port = parseInt(document.getElementById('manualPortInput').value.trim()) || 48999;
+  if (!ip) return;
+
+  closeDirectConnectModal();
+  startDirectSession({
+    id: `manual-${ip}`,
+    name: `Gaming Laptop (${ip})`,
+    ip,
+    controlPort: port
+  });
+}
+
+// ==================== DEMO PC CARD ====================
+function addDemoStation() {
+  const demo = {
+    id: 'rog-demo-01',
+    name: 'ASUS ROG Strix (Demo)',
+    hostname: 'ROG-STRIX-G16',
+    os: 'Windows 11 Pro',
+    ip: '192.168.1.105',
+    controlPort: 48999,
+    status: 'online',
+    isLocked: false,
+    sessionSeconds: 2700,
+    sessionTotalSeconds: 3600,
+    cpu: 48,
+    ram: 64,
+    ramTotalGb: 32.0,
+    ramUsedGb: 20.4,
+    battery: 95,
+    isCharging: true,
+    batteryStatus: 'Plugged in (Fast Charge)',
+    activeWindow: 'Cyberpunk 2077',
+    lastSeen: Date.now()
+  };
+  stations.set(demo.id, demo);
+  renderStations();
+}
+
 // Initialize on page load
 connectWebSocket();
+
