@@ -3,6 +3,7 @@
   "stationId": "laptop-01",
   "stationName": "Gaming Laptop 01",
   "authToken": "gameroom_secret_key_2026",
+  "autoStartWithWindows": true,
   "telemetryIntervalSeconds": 3,
   "autoLockOnDisconnect": false
 }

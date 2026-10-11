@@ -12,7 +12,14 @@ namespace GameRoomAgent
         {
             ApplicationConfiguration.Initialize();
 
+            StartupManager.RegisterCrashRecovery();
+
             var config = Config.Load();
+            if (config.AutoStartWithWindows)
+            {
+                StartupManager.SetAutoStart(true);
+            }
+
             var hardware = new HardwareMonitor();
             var syncContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
             SynchronizationContext.SetSynchronizationContext(syncContext);

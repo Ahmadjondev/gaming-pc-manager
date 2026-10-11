@@ -88,6 +88,68 @@ function connect() {
         console.log('🔄 >>> SYSTEM RESTART SCHEDULED IN 5s <<<');
       } else if (msg.action === 'shutdown') {
         console.log('⏻ >>> SYSTEM SHUTDOWN SCHEDULED IN 5s <<<');
+      } else if (msg.action === 'get_screen') {
+        console.log('📺 >>> SCREEN CAPTURE REQUESTED: Sending mock frame <<<');
+        // 1x1 transparent/cyan JPEG placeholder base64
+        const mockFrame = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';
+        ws.send(JSON.stringify({
+          type: 'screen_frame',
+          stationId: STATION_ID,
+          image: mockFrame,
+          timestamp: Date.now()
+        }));
+      } else if (msg.action === 'get_drives') {
+        console.log('💽 >>> DRIVES REQUESTED: Sending mock drives <<<');
+        ws.send(JSON.stringify({
+          type: 'drives_listing',
+          stationId: STATION_ID,
+          drives: [
+            { Name: 'C:\\', Label: 'Windows NVMe', TotalGb: 512.0, FreeGb: 148.5, DriveType: 'Fixed' },
+            { Name: 'D:\\', Label: 'Games SSD', TotalGb: 2048.0, FreeGb: 1120.2, DriveType: 'Fixed' }
+          ]
+        }));
+      } else if (msg.action === 'browse_dir') {
+        const path = msg.path || 'D:\\Games';
+        console.log(`📁 >>> BROWSE DIR REQUESTED: ${path} <<<`);
+        ws.send(JSON.stringify({
+          type: 'dir_listing',
+          stationId: STATION_ID,
+          result: {
+            CurrentPath: path,
+            ParentPath: path.length > 3 ? 'D:\\' : null,
+            Items: [
+              { Name: 'Counter-Strike 2', FullPath: `${path}\\Counter-Strike 2`, IsDirectory: true, LastModified: '2026-10-10 14:20' },
+              { Name: 'Valorant', FullPath: `${path}\\Valorant`, IsDirectory: true, LastModified: '2026-10-09 18:30' },
+              { Name: 'Cyberpunk 2077', FullPath: `${path}\\Cyberpunk 2077`, IsDirectory: true, LastModified: '2026-10-05 21:00' },
+              { Name: 'SteamSetup.exe', FullPath: `${path}\\SteamSetup.exe`, IsDirectory: false, SizeFormatted: '2.1 MB', IsExecutable: true, LastModified: '2026-10-11 10:15' },
+              { Name: 'EpicInstaller.msi', FullPath: `${path}\\EpicInstaller.msi`, IsDirectory: false, SizeFormatted: '45.3 MB', IsExecutable: true, LastModified: '2026-10-08 11:00' }
+            ]
+          }
+        }));
+      } else if (msg.action === 'exec_file') {
+        console.log(`▶ >>> LAUNCHING FILE REMOTELY: ${msg.filePath} <<<`);
+        ws.send(JSON.stringify({
+          type: 'exec_result',
+          stationId: STATION_ID,
+          success: true,
+          message: `Process launched successfully: ${msg.filePath} (PID: 8420)`
+        }));
+      } else if (msg.action === 'download_file') {
+        console.log(`⬇ >>> DOWNLOADING FILE: ${msg.url} to ${msg.destinationFolder} <<<`);
+        let p = 0;
+        const dlInt = setInterval(() => {
+          p += 25;
+          ws.send(JSON.stringify({ type: 'download_progress', stationId: STATION_ID, percent: Math.min(100, p) }));
+          if (p >= 100) {
+            clearInterval(dlInt);
+            ws.send(JSON.stringify({
+              type: 'download_status',
+              stationId: STATION_ID,
+              status: 'completed',
+              message: `Successfully downloaded installer to ${msg.destinationFolder}`
+            }));
+          }
+        }, 500);
       }
     } catch (err) {
       console.error('Failed to parse command:', err);

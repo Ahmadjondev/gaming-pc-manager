@@ -207,6 +207,103 @@ namespace GameRoomAgent
                             UseShellExecute = false
                         });
                         break;
+
+                    case "get_screen":
+                        Task.Run(async () =>
+                        {
+                            string? screenB64 = ScreenCapture.CaptureScreenBase64(1280, 65);
+                            if (!string.IsNullOrEmpty(screenB64))
+                            {
+                                await SendJsonAsync(new
+                                {
+                                    type = "screen_frame",
+                                    stationId = _config.StationId,
+                                    image = screenB64,
+                                    timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                                }, CancellationToken.None);
+                            }
+                        });
+                        break;
+
+                    case "get_drives":
+                        Task.Run(async () =>
+                        {
+                            var drives = RemoteFileManager.GetDrives();
+                            await SendJsonAsync(new
+                            {
+                                type = "drives_listing",
+                                stationId = _config.StationId,
+                                drives = drives
+                            }, CancellationToken.None);
+                        });
+                        break;
+
+                    case "browse_dir":
+                        Task.Run(async () =>
+                        {
+                            string? path = root.TryGetProperty("path", out var pp) ? pp.GetString() : null;
+                            var result = RemoteFileManager.ListDirectory(path);
+                            await SendJsonAsync(new
+                            {
+                                type = "dir_listing",
+                                stationId = _config.StationId,
+                                result = result
+                            }, CancellationToken.None);
+                        });
+                        break;
+
+                    case "exec_file":
+                        Task.Run(async () =>
+                        {
+                            string filePath = root.TryGetProperty("filePath", out var fp) ? fp.GetString() ?? "" : "";
+                            string? args = root.TryGetProperty("arguments", out var ap) ? ap.GetString() : null;
+                            var (success, msg, pid) = RemoteFileManager.ExecuteFile(filePath, args);
+                            await SendJsonAsync(new
+                            {
+                                type = "exec_result",
+                                stationId = _config.StationId,
+                                filePath = filePath,
+                                success = success,
+                                message = msg,
+                                pid = pid
+                            }, CancellationToken.None);
+                        });
+                        break;
+
+                    case "download_file":
+                        Task.Run(async () =>
+                        {
+                            string url = root.TryGetProperty("url", out var up) ? up.GetString() ?? "" : "";
+                            string dest = root.TryGetProperty("destinationFolder", out var dp) ? dp.GetString() ?? @"C:\Games" : @"C:\Games";
+                            string? fileName = root.TryGetProperty("fileName", out var fnp) ? fnp.GetString() : null;
+
+                            await SendJsonAsync(new
+                            {
+                                type = "download_status",
+                                stationId = _config.StationId,
+                                status = "started",
+                                message = $"Starting download from {url}..."
+                            }, CancellationToken.None);
+
+                            var (success, msg) = await RemoteFileManager.DownloadFileAsync(url, dest, fileName, async (progress) =>
+                            {
+                                await SendJsonAsync(new
+                                {
+                                    type = "download_progress",
+                                    stationId = _config.StationId,
+                                    percent = progress
+                                }, CancellationToken.None);
+                            });
+
+                            await SendJsonAsync(new
+                            {
+                                type = "download_status",
+                                stationId = _config.StationId,
+                                status = success ? "completed" : "failed",
+                                message = msg
+                            }, CancellationToken.None);
+                        });
+                        break;
                 }
             }
             catch (Exception ex)

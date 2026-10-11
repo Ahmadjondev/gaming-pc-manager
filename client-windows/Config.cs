@@ -10,6 +10,7 @@ namespace GameRoomAgent
         public string StationId { get; set; } = "laptop-01";
         public string StationName { get; set; } = "Gaming Laptop 01";
         public string AuthToken { get; set; } = "gameroom_secret_key_2026";
+        public bool AutoStartWithWindows { get; set; } = true;
         public int TelemetryIntervalSeconds { get; set; } = 3;
         public bool AutoLockOnDisconnect { get; set; } = false;
 

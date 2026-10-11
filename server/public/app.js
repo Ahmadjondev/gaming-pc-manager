@@ -105,6 +105,30 @@ function handleServerMessage(msg) {
         renderStations();
       }
       break;
+
+    case 'screen_frame':
+      handleScreenFrame(msg);
+      break;
+
+    case 'drives_listing':
+      handleDrivesListing(msg);
+      break;
+
+    case 'dir_listing':
+      handleDirListing(msg);
+      break;
+
+    case 'exec_result':
+      alert(`[Execute Result]: ${msg.message}`);
+      break;
+
+    case 'download_progress':
+      handleDownloadProgress(msg);
+      break;
+
+    case 'download_status':
+      handleDownloadStatus(msg);
+      break;
   }
 }
 
@@ -244,15 +268,21 @@ function renderStations() {
       <div class="action-toolbar">
         ${isLocked ? `
           <button class="btn btn-unlock" onclick="unlockStation('${st.id}')">
-            🔓 Unlock Now
+            🔓 Unlock
           </button>
         ` : `
           <button class="btn btn-lock" onclick="lockStation('${st.id}')">
-            🔒 Lock Now
+            🔒 Lock
           </button>
         `}
         <button class="btn btn-alert" onclick="openAlertModal('${st.id}')">
           📢 Message
+        </button>
+        <button class="btn btn-primary" onclick="openScreenModal('${st.id}')">
+          📺 View Screen
+        </button>
+        <button class="btn btn-secondary" onclick="openFilesModal('${st.id}')">
+          📁 Files & Games
         </button>
         <button class="btn btn-power" onclick="confirmPowerAction('${st.id}', 'restart')">
           🔄 Restart
@@ -334,6 +364,257 @@ function closePowerModal() {
   document.getElementById('powerModal').classList.remove('open');
   activeTargetStationId = null;
   pendingPowerAction = null;
+}
+
+// ==================== SCREEN VIEWER ====================
+let screenStreamInterval = null;
+
+function openScreenModal(stationId) {
+  activeTargetStationId = stationId;
+  const modal = document.getElementById('screenModal');
+  const title = document.getElementById('screenModalTitle');
+  const placeholder = document.getElementById('screenPlaceholder');
+  const img = document.getElementById('screenImg');
+  const streamBtn = document.getElementById('streamToggleBtn');
+
+  title.textContent = `📺 Remote Screen: ${stations.get(stationId)?.name || stationId}`;
+  img.style.display = 'none';
+  placeholder.style.display = 'block';
+  placeholder.textContent = 'Requesting screen snapshot from laptop...';
+  streamBtn.textContent = '▶ Live Stream (1 FPS)';
+  if (screenStreamInterval) {
+    clearInterval(screenStreamInterval);
+    screenStreamInterval = null;
+  }
+
+  modal.classList.add('open');
+  requestScreenSnapshot();
+}
+
+function closeScreenModal() {
+  const modal = document.getElementById('screenModal');
+  modal.classList.remove('open');
+  if (screenStreamInterval) {
+    clearInterval(screenStreamInterval);
+    screenStreamInterval = null;
+  }
+}
+
+function requestScreenSnapshot() {
+  if (!activeTargetStationId) return;
+  sendAdminCommand('get_screen', activeTargetStationId);
+}
+
+function toggleScreenStream() {
+  const streamBtn = document.getElementById('streamToggleBtn');
+  if (screenStreamInterval) {
+    clearInterval(screenStreamInterval);
+    screenStreamInterval = null;
+    streamBtn.textContent = '▶ Live Stream (1 FPS)';
+    streamBtn.classList.remove('btn-primary');
+    streamBtn.classList.add('btn-secondary');
+  } else {
+    requestScreenSnapshot();
+    screenStreamInterval = setInterval(requestScreenSnapshot, 1000);
+    streamBtn.textContent = '⏹ Stop Stream';
+    streamBtn.classList.remove('btn-secondary');
+    streamBtn.classList.add('btn-primary');
+  }
+}
+
+function handleScreenFrame(msg) {
+  if (msg.stationId !== activeTargetStationId) return;
+  const placeholder = document.getElementById('screenPlaceholder');
+  const img = document.getElementById('screenImg');
+  const metaTime = document.getElementById('screenMetaTime');
+
+  if (msg.image) {
+    placeholder.style.display = 'none';
+    img.style.display = 'block';
+    img.src = `data:image/jpeg;base64,${msg.image}`;
+    const date = new Date(msg.timestamp || Date.now());
+    metaTime.textContent = `Snapshot Received: ${date.toLocaleTimeString()}`;
+  }
+}
+
+// ==================== REMOTE FILES & GAME INSTALLER ====================
+let currentBrowsedPath = '';
+let parentBrowsedPath = null;
+
+function openFilesModal(stationId) {
+  activeTargetStationId = stationId;
+  const modal = document.getElementById('filesModal');
+  const title = document.getElementById('filesModalTitle');
+  title.textContent = `📁 Remote Files & Game Installer: ${stations.get(stationId)?.name || stationId}`;
+
+  document.getElementById('drivesButtons').innerHTML = 'Scanning drives...';
+  document.getElementById('filesTableBody').innerHTML = '<tr><td colspan="4" class="text-center text-muted">Reading laptop file system...</td></tr>';
+  document.getElementById('downloadProgressBox').style.display = 'none';
+
+  modal.classList.add('open');
+
+  // Request available drives and default directory
+  sendAdminCommand('get_drives', stationId);
+  sendAdminCommand('browse_dir', stationId, { path: '' });
+}
+
+function closeFilesModal() {
+  document.getElementById('filesModal').classList.remove('open');
+}
+
+function handleDrivesListing(msg) {
+  if (msg.stationId !== activeTargetStationId) return;
+  const container = document.getElementById('drivesButtons');
+  container.innerHTML = '';
+
+  if (!msg.drives || msg.drives.length === 0) {
+    container.textContent = 'No drives found.';
+    return;
+  }
+
+  for (const d of msg.drives) {
+    const btn = document.createElement('button');
+    btn.className = 'drive-chip';
+    btn.textContent = `💽 ${d.Name} (${d.FreeGb} GB free / ${d.TotalGb} GB)`;
+    btn.onclick = () => {
+      document.querySelectorAll('.drive-chip').forEach(c => c.classList.remove('active'));
+      btn.classList.add('active');
+      browsePath(d.Name);
+    };
+    container.appendChild(btn);
+  }
+}
+
+function handleDirListing(msg) {
+  if (msg.stationId !== activeTargetStationId) return;
+  const res = msg.result;
+  const tableBody = document.getElementById('filesTableBody');
+  const pathDisplay = document.getElementById('currentPathDisplay');
+  const upBtn = document.getElementById('btnParentDir');
+
+  if (res.error) {
+    tableBody.innerHTML = `<tr><td colspan="4" style="color: var(--color-ruby); padding: 12px;">Error: ${res.error}</td></tr>`;
+    return;
+  }
+
+  currentBrowsedPath = res.CurrentPath;
+  parentBrowsedPath = res.ParentPath;
+  pathDisplay.value = currentBrowsedPath;
+  upBtn.disabled = !parentBrowsedPath;
+
+  tableBody.innerHTML = '';
+
+  if (!res.Items || res.Items.length === 0) {
+    tableBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted" style="padding: 16px;">This folder is empty.</td></tr>';
+    return;
+  }
+
+  for (const item of res.Items) {
+    const tr = document.createElement('tr');
+    tr.className = 'file-row';
+
+    if (item.IsDirectory) {
+      tr.innerHTML = `
+        <td><a class="folder-link" onclick="browsePath('${escapePath(item.FullPath)}')">📁 ${item.Name}</a></td>
+        <td class="text-muted">&lt;DIR&gt;</td>
+        <td class="text-muted">${item.LastModified}</td>
+        <td>-</td>
+      `;
+    } else {
+      let actionHtml = '-';
+      if (item.IsExecutable) {
+        actionHtml = `<button class="btn-install" onclick="runRemoteFile('${escapePath(item.FullPath)}')">▶ Run / Install</button>`;
+      }
+
+      tr.innerHTML = `
+        <td><span>📄 ${item.Name}</span></td>
+        <td>${item.SizeFormatted}</td>
+        <td class="text-muted">${item.LastModified}</td>
+        <td>${actionHtml}</td>
+      `;
+    }
+
+    tableBody.appendChild(tr);
+  }
+}
+
+function escapePath(path) {
+  return (path || '').replace(/\\/g, '\\\\');
+}
+
+function browsePath(path) {
+  if (!activeTargetStationId) return;
+  document.getElementById('filesTableBody').innerHTML = '<tr><td colspan="4" class="text-center text-muted" style="padding: 16px;">Loading directory...</td></tr>';
+  sendAdminCommand('browse_dir', activeTargetStationId, { path });
+}
+
+function navigateParentDir() {
+  if (parentBrowsedPath) {
+    browsePath(parentBrowsedPath);
+  }
+}
+
+function refreshCurrentDir() {
+  if (currentBrowsedPath) {
+    browsePath(currentBrowsedPath);
+  }
+}
+
+function runRemoteFile(filePath) {
+  if (!confirm(`Are you sure you want to run this installer/program on the laptop?\n\nFile: ${filePath}`)) {
+    return;
+  }
+
+  sendAdminCommand('exec_file', activeTargetStationId, { filePath });
+}
+
+function startRemoteDownload() {
+  const urlInput = document.getElementById('downloadUrlInput');
+  const nameInput = document.getElementById('downloadFileNameInput');
+  const url = urlInput.value.trim();
+  const fileName = nameInput.value.trim() || null;
+
+  if (!url) {
+    alert('Please enter a valid direct download URL.');
+    return;
+  }
+
+  const destinationFolder = currentBrowsedPath || 'C:\\Games';
+  const progressBox = document.getElementById('downloadProgressBox');
+  const progressBar = document.getElementById('downloadProgressBar');
+  const statusLabel = document.getElementById('downloadStatusLabel');
+
+  progressBox.style.display = 'block';
+  progressBar.style.width = '0%';
+  statusLabel.textContent = `Sending download request for ${url}...`;
+
+  sendAdminCommand('download_file', activeTargetStationId, {
+    url,
+    destinationFolder,
+    fileName
+  });
+
+  urlInput.value = '';
+  nameInput.value = '';
+}
+
+function handleDownloadProgress(msg) {
+  if (msg.stationId !== activeTargetStationId) return;
+  const progressBar = document.getElementById('downloadProgressBar');
+  const statusLabel = document.getElementById('downloadStatusLabel');
+  progressBar.style.width = `${msg.percent}%`;
+  statusLabel.textContent = `Downloading installer: ${msg.percent}%`;
+}
+
+function handleDownloadStatus(msg) {
+  if (msg.stationId !== activeTargetStationId) return;
+  const statusLabel = document.getElementById('downloadStatusLabel');
+  statusLabel.textContent = msg.message;
+  if (msg.status === 'completed') {
+    setTimeout(() => {
+      refreshCurrentDir();
+    }, 1500);
+  }
 }
 
 // Initialize on page load

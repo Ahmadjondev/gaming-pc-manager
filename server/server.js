@@ -218,6 +218,16 @@ function handleAdminCommand(cmd) {
         clientWs.send(JSON.stringify({ action: 'shutdown' }));
       }
       break;
+
+    case 'get_screen':
+    case 'get_drives':
+    case 'browse_dir':
+    case 'exec_file':
+    case 'download_file':
+      if (clientWs && clientWs.readyState === WebSocket.OPEN) {
+        clientWs.send(JSON.stringify(cmd));
+      }
+      break;
   }
 }
 
@@ -288,6 +298,8 @@ function handleClientConnection(ws, req) {
 
           broadcastToAdmins({ type: 'station_update', station });
         }
+      } else if (['screen_frame', 'drives_listing', 'dir_listing', 'exec_result', 'download_progress', 'download_status'].includes(msg.type)) {
+        broadcastToAdmins(msg);
       }
     } catch (err) {
       console.error('[Client] Message error:', err.message);
